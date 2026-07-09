@@ -79,13 +79,7 @@ cd ~/work/code/nextai-skills
 clawhub skill publish ./image-forge --owner nextai-nova --slug nextai-image-forge --version 1.0.0
 ```
 
-ClawHub validates publisher ownership. The publishing account must have access to the `@nextai` owner. If `@nextai` is unavailable, use the approved org owner, for example:
-
-```bash
-openclaw skills install @nextai-nova/image-forge
-```
-
-and publish under that owner instead.
+ClawHub validates publisher ownership. The publishing account must have access to the `@nextai-nova` owner.
 
 ### ClawHub verification checklist
 
