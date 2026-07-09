@@ -9,7 +9,7 @@ npx skills add image-forge
 ```
 
 ```bash
-openclaw skills install @nextai/image-forge
+openclaw skills install @nextai-nova/nextai-image-forge
 ```
 
 These are two different ecosystems and require two publication steps.
@@ -67,7 +67,7 @@ npx skills add NextAI-Nova/nextai-skills@image-forge
 OpenClaw installs name-only registry skills from ClawHub using owner-scoped refs:
 
 ```bash
-openclaw skills install @nextai/image-forge
+openclaw skills install @nextai-nova/nextai-image-forge
 ```
 
 Publish the skill folder to ClawHub:
@@ -76,7 +76,7 @@ Publish the skill folder to ClawHub:
 npm i -g clawhub
 clawhub login
 cd ~/work/code/nextai-skills
-clawhub skill publish ./image-forge --version 1.0.0
+clawhub skill publish ./image-forge --owner nextai-nova --slug nextai-image-forge --version 1.0.0
 ```
 
 ClawHub validates publisher ownership. The publishing account must have access to the `@nextai` owner. If `@nextai` is unavailable, use the approved org owner, for example:
@@ -90,10 +90,10 @@ and publish under that owner instead.
 ### ClawHub verification checklist
 
 ```bash
-openclaw skills search image-forge
-openclaw skills verify @nextai/image-forge
-openclaw skills install @nextai/image-forge --force
-openclaw skills info image-forge
+openclaw skills search nextai-image-forge
+openclaw skills verify @nextai-nova/nextai-image-forge
+openclaw skills install @nextai-nova/nextai-image-forge --force
+openclaw skills info nextai-image-forge
 ```
 
 ## Pre-release local checks
