@@ -37,7 +37,7 @@ On first use, the skill starts a local setup page for API key and model configur
 ### OpenClaw
 
 ```bash
-openclaw skills install @nextai-nova/nextai-image-forge
+openclaw skills install @nextai/nextai-image-forge
 ```
 
 ### npx skills
@@ -58,5 +58,5 @@ npx skills add NextAI-Nova/nextai-skills@image-forge
 ## Links
 
 - GitHub: https://github.com/NextAI-Nova/nextai-skills
-- ClawHub: https://clawhub.ai/nextai-nova/skills/nextai-image-forge
+- ClawHub: https://clawhub.ai/nextai/skills/nextai-image-forge
 - NextAI Code: https://www.nextai-code.com

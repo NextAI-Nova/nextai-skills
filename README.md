@@ -33,7 +33,7 @@ npx skills add NextAI-Nova/nextai-skills@image-forge
 Target user-facing install name:
 
 ```bash
-openclaw skills install @nextai-nova/nextai-image-forge
+openclaw skills install @nextai/nextai-image-forge
 ```
 
 This is the published ClawHub skill reference.
