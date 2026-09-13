@@ -61,7 +61,18 @@ class ConfigTests(unittest.TestCase):
             "User approval: yes.",
         ])
 
-    def test_configure_writes_project_config_without_api_key(self):
+    def compact_brief(self):
+        return "\n".join([
+            "Approved Image Brief",
+            "Context: marketing hero image for the product launch page.",
+            "Requirements: one robot mascot, 1024x1024 PNG, no text.",
+            "Approach: flat friendly illustration, centered, soft palette.",
+            "Constraints: no watermark, no extra logos.",
+            "Edit scope: not applicable.",
+            "User approval: yes",
+        ])
+
+    def test_configure_writes_user_level_config_without_api_key(self):
         result = self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
@@ -70,13 +81,287 @@ class ConfigTests(unittest.TestCase):
             default_model="gpt-image-2",
         )
 
+        self.assertTrue(result["userConfigSaved"])
+        user_config_path = os.path.join(self.home, ".config", "image-forge", "config.json")
+        with open(user_config_path) as handle:
+            user_config = json.load(handle)
+        self.assertEqual(user_config["apiUrl"], "https://www.nextai-code.com/v1")
+        self.assertEqual(user_config["defaultModel"], "gpt-image-2")
+        self.assertNotIn("apiKey", user_config)
+        # Project-level config is also written when a model is set explicitly,
+        # keeping directory-level override behavior intact.
         self.assertTrue(result["projectConfigSaved"])
         project_config_path = os.path.join(self.cwd, ".image-forge", "config.json")
         with open(project_config_path) as handle:
             project_config = json.load(handle)
-        self.assertEqual(project_config["apiUrl"], "https://www.nextai-code.com/v1")
         self.assertEqual(project_config["defaultModel"], "gpt-image-2")
         self.assertNotIn("apiKey", project_config)
+
+    def test_configure_persists_model_user_level_only_for_any_directory(self):
+        other_cwd = os.path.join(self.tmp.name, "other-project")
+        os.makedirs(other_cwd)
+
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_key="sk-test-secret",
+            default_model="gpt-image-2",
+        )
+
+        # From a completely different working directory, config resolves.
+        config = self.mod.load_effective_config(cwd=other_cwd, home=self.home, env={})
+        self.assertEqual(config["model"], "gpt-image-2")
+        self.assertEqual(config["apiKey"], "sk-test-secret")
+        result = self.mod.preflight(cwd=other_cwd, home=self.home, env={})
+        self.assertEqual(result["ready"], True)
+        self.assertEqual(result["model"], "gpt-image-2")
+
+    def test_project_config_overrides_user_level_model(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_key="sk-test-secret",
+            default_model="user-model",
+        )
+        project_path = os.path.join(self.cwd, ".image-forge", "config.json")
+        with open(project_path) as handle:
+            project_config = json.load(handle)
+        project_config["defaultModel"] = "project-model"
+        with open(project_path, "w") as handle:
+            json.dump(project_config, handle)
+
+        config = self.mod.load_effective_config(cwd=self.cwd, home=self.home, env={})
+        self.assertEqual(config["model"], "project-model")
+        other_cwd = os.path.join(self.tmp.name, "sibling-project")
+        os.makedirs(other_cwd)
+        sibling = self.mod.load_effective_config(cwd=other_cwd, home=self.home, env={})
+        self.assertEqual(sibling["model"], "user-model")
+
+    def test_ensure_ready_migrates_legacy_project_model_to_user_level(self):
+        legacy_config = {
+            "apiUrl": "https://www.nextai-code.com/v1",
+            "defaultModel": "legacy-model",
+        }
+        legacy_path = os.path.join(self.cwd, ".image-forge", "config.json")
+        os.makedirs(os.path.dirname(legacy_path))
+        with open(legacy_path, "w") as handle:
+            json.dump(legacy_config, handle)
+        self.mod.write_json(
+            os.path.join(self.home, ".config", "image-forge", "secrets.json"),
+            {"apiKey": "sk-legacy-secret"},
+            mode=0o600,
+        )
+
+        setup_calls = []
+        result = self.mod.ensure_ready(
+            cwd=self.cwd,
+            home=self.home,
+            env={},
+            setup_func=lambda **kwargs: setup_calls.append(kwargs),
+        )
+
+        self.assertEqual(result["ready"], True)
+        self.assertEqual(result["model"], "legacy-model")
+        self.assertEqual(setup_calls, [])
+        user_config_path = os.path.join(self.home, ".config", "image-forge", "config.json")
+        with open(user_config_path) as handle:
+            user_config = json.load(handle)
+        self.assertEqual(user_config["defaultModel"], "legacy-model")
+        # Idempotent: second run does not re-migrate or change anything.
+        self.mod.ensure_ready(cwd=self.cwd, home=self.home, env={},
+                              setup_func=lambda **kwargs: setup_calls.append(kwargs))
+        self.assertEqual(len(setup_calls), 0)
+
+    def test_migration_promotes_output_dir_when_user_level_missing(self):
+        legacy_path = os.path.join(self.cwd, ".image-forge", "config.json")
+        os.makedirs(os.path.dirname(legacy_path))
+        with open(legacy_path, "w") as handle:
+            json.dump({
+                "apiUrl": "https://www.nextai-code.com/v1",
+                "defaultModel": "legacy-model",
+                "outputDir": "images",
+            }, handle)
+
+        result = self.mod.configure_values(cwd=self.cwd, home=self.home)
+
+        self.assertTrue(result["migrated"])
+        self.assertEqual(result["migratedFields"], ["defaultModel", "outputDir"])
+        user_config_path = os.path.join(self.home, ".config", "image-forge", "config.json")
+        with open(user_config_path) as handle:
+            user_config = json.load(handle)
+        self.assertEqual(user_config["defaultModel"], "legacy-model")
+        self.assertEqual(user_config["outputDir"], "images")
+
+    def test_compact_brief_v2_is_accepted(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_key="sk-secret",
+            default_model="gpt-image-2",
+        )
+        calls = []
+        original_http_json = self.mod.http_json
+        self.mod.http_json = lambda _url, _headers, _body: (
+            calls.append("called"),
+            {"data": [{"b64_json": base64.b64encode(b"v2-image").decode("ascii")}]},
+        )[1]
+        try:
+            paths = self.mod.generate_image(
+                prompt="robot",
+                output_name="robot-v2",
+                cwd=self.cwd,
+                home=self.home,
+                env={},
+                brief=self.compact_brief(),
+            )
+        finally:
+            self.mod.http_json = original_http_json
+
+        self.assertEqual(calls, ["called"])
+        self.assertTrue(os.path.exists(paths[0]["imagePath"]))
+        with open(paths[0]["imagePath"], "rb") as handle:
+            self.assertEqual(handle.read(), b"v2-image")
+
+    def test_compact_brief_v2_without_user_approval_is_rejected(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_key="sk-secret",
+            default_model="gpt-image-2",
+        )
+        calls = []
+        original_http_json = self.mod.http_json
+        self.mod.http_json = lambda _url, _headers, _body: calls.append("called")
+        weak_brief = self.compact_brief().replace("User approval: yes", "User approval:")
+        try:
+            with self.assertRaises(self.mod.ImageForgeError) as ctx:
+                self.mod.generate_image(
+                    prompt="robot",
+                    cwd=self.cwd,
+                    home=self.home,
+                    env={},
+                    brief=weak_brief,
+                )
+        finally:
+            self.mod.http_json = original_http_json
+
+        self.assertEqual(ctx.exception.code, "brief_required")
+        self.assertEqual(calls, [])
+
+    def test_legacy_v1_brief_still_accepted(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_key="sk-secret",
+            default_model="gpt-image-2",
+        )
+        original_http_json = self.mod.http_json
+        self.mod.http_json = lambda _url, _headers, _body: {
+            "data": [{"b64_json": base64.b64encode(b"v1-image").decode("ascii")}]
+        }
+        try:
+            paths = self.mod.generate_image(
+                prompt="robot",
+                output_name="robot-v1",
+                cwd=self.cwd,
+                home=self.home,
+                env={},
+                brief=self.approved_brief(),
+            )
+        finally:
+            self.mod.http_json = original_http_json
+
+        self.assertTrue(os.path.exists(paths[0]["imagePath"]))
+
+    def test_write_image_outputs_downloads_url_response_to_png(self):
+        response = {"data": [{"url": "https://www.nextai-code.com/files/img-abc.png"}]}
+        paths = self.mod.write_image_outputs(
+            response=response,
+            output_dir=self.cwd,
+            output_name="url-image",
+            download_func=lambda url: b"url-image-bytes",
+        )
+
+        self.assertEqual(len(paths), 1)
+        self.assertTrue(paths[0]["imagePath"].endswith(".png"))
+        with open(paths[0]["imagePath"], "rb") as handle:
+            self.assertEqual(handle.read(), b"url-image-bytes")
+
+    def test_write_image_outputs_prefers_b64_when_both_present(self):
+        payload = b"from-b64"
+        response = {
+            "data": [
+                {
+                    "b64_json": base64.b64encode(payload).decode("ascii"),
+                    "url": "https://www.nextai-code.com/files/should-not-download.png",
+                }
+            ]
+        }
+        downloaded = []
+        paths = self.mod.write_image_outputs(
+            response=response,
+            output_dir=self.cwd,
+            output_name="both-image",
+            download_func=lambda url: downloaded.append(url) or b"from-url",
+        )
+
+        self.assertEqual(downloaded, [])
+        with open(paths[0]["imagePath"], "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+
+    def test_write_image_outputs_download_failure_keeps_url_in_error(self):
+        def failing_download(url):
+            raise self.mod.ImageForgeError("download_failed", "boom " + url)
+
+        response = {"data": [{"url": "https://www.nextai-code.com/files/expired.png"}]}
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.write_image_outputs(
+                response=response,
+                output_dir=self.cwd,
+                output_name="dl-fail",
+                download_func=failing_download,
+            )
+
+        self.assertEqual(ctx.exception.code, "download_failed")
+        self.assertIn("https://www.nextai-code.com/files/expired.png", str(ctx.exception))
+
+    def test_download_image_bytes_http_error_includes_url(self):
+        class FailingOpener:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b""
+
+        original_urlopen = self.mod.request.urlopen
+        def fake_urlopen(req, timeout=None):
+            raise self.mod.error.HTTPError(req.full_url, 404, "Not Found", None, None)
+
+        self.mod.request.urlopen = fake_urlopen
+        try:
+            with self.assertRaises(self.mod.ImageForgeError) as ctx:
+                self.mod.download_image_bytes("https://www.nextai-code.com/files/missing.png")
+        finally:
+            self.mod.request.urlopen = original_urlopen
+
+        self.assertEqual(ctx.exception.code, "download_failed")
+        self.assertIn("https://www.nextai-code.com/files/missing.png", str(ctx.exception))
+        self.assertIn("404", str(ctx.exception))
+
+    def test_write_image_outputs_rejects_item_without_b64_or_url(self):
+        response = {"data": [{}]}
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.write_image_outputs(
+                response=response,
+                output_dir=self.cwd,
+                output_name="empty-item",
+            )
+
+        self.assertEqual(ctx.exception.code, "protocol_error")
+        self.assertIn("did not include b64_json or url", str(ctx.exception))
 
     def test_configure_writes_user_secret_with_restricted_mode(self):
         result = self.mod.configure_values(
@@ -955,9 +1240,15 @@ class SkillInstructionTests(unittest.TestCase):
         self.assertIn("setup-server", skill)
         self.assertIn("Do not do any other work until preflight passes", skill)
         self.assertNotIn("Before any AI image generation or editing work, run ImageForge `preflight`.", skill)
-        self.assertNotIn("brand questions", skill)
-        self.assertNotIn("style questions", skill)
-        self.assertNotIn("brand, product, copy, style, layout", skill)
+
+    def test_skill_documents_user_level_global_config(self):
+        skill = self.read_skill()
+
+        self.assertIn("~/.config/image-forge/config.json", skill)
+        self.assertIn("User-level global config", skill)
+        self.assertIn("shared across all working directories", skill)
+        self.assertIn("Project-level override", skill)
+        self.assertIn("migrated to the user-level config automatically", skill)
 
     def test_skill_resolves_workspace_and_home_install_paths_before_commands(self):
         skill = self.read_skill()
@@ -981,52 +1272,29 @@ class SkillInstructionTests(unittest.TestCase):
 
         self.assertIn("Image Brief Gate", skill)
         self.assertIn("Read `references/image-brief.md`", skill)
-        self.assertIn("Do not run `generate` or `edit` until", skill)
-        self.assertIn("user approves the brief", skill)
-        self.assertIn("Ask one question at a time", skill)
-        self.assertIn("MUST complete the Image Brief Brainstorming Workflow", skill)
-        self.assertIn("Do not compress the workflow into one brief", skill)
+        self.assertIn("present a compact Approved Image Brief", skill)
+        self.assertIn("explicit user approval", skill)
+        self.assertIn("one batch", skill)
         self.assertIn("Direct mode", skill)
         self.assertIn("Generate: after the Image Brief Gate", skill)
         self.assertIn("Edit: after the Image Brief Gate", skill)
         self.assertIn("--brief '<approved brief>'", skill)
         self.assertIn("--direct", skill)
 
-    def test_image_brief_reference_covers_quality_inputs_and_confirmation(self):
+    def test_image_brief_reference_defines_compact_flow(self):
         brief = self.read_image_brief()
 
-        self.assertIn("Purpose", brief)
-        self.assertIn("Audience", brief)
-        self.assertIn("Deliverable", brief)
-        self.assertIn("Subject", brief)
-        self.assertIn("Style", brief)
-        self.assertIn("Composition", brief)
-        self.assertIn("Text", brief)
-        self.assertIn("Constraints", brief)
-        self.assertIn("Edit-Specific", brief)
-        self.assertIn("Approved Brief", brief)
-        self.assertIn("one question at a time", brief)
-        self.assertIn("Direct mode", brief)
-        self.assertIn("Image Brief Brainstorming Workflow", brief)
-        self.assertIn("MUST complete these steps in order", brief)
-        self.assertIn("Explore context", brief)
-        self.assertIn("Offer visual companion", brief)
-        self.assertIn("Ask clarifying questions", brief)
-        self.assertIn("Propose 2-3 approaches", brief)
-        self.assertIn("Present design sections", brief)
-        self.assertIn("User approves", brief)
-        self.assertIn("Brief self-review", brief)
-        self.assertIn("Do not compress this into one message", brief)
+        self.assertIn("Fast path", brief)
+        self.assertIn("one confirmation", brief)
+        self.assertIn("ONE batch", brief)
         self.assertIn("Approved Image Brief", brief)
-        self.assertIn("Questions answered", brief)
-        self.assertIn("Approaches considered", brief)
-        self.assertIn("Selected direction", brief)
-        self.assertIn("visible checklist", brief)
-        self.assertIn("Do NOT answer with an Approved Image Brief in the first response", brief)
-        self.assertIn("stop after the first question", brief)
-        self.assertIn("Design confirmations", brief)
-        self.assertIn("question/answer evidence", brief)
-        self.assertIn("2-3 approaches", brief)
+        self.assertIn("Requirements:", brief)
+        self.assertIn("Approach:", brief)
+        self.assertIn("Constraints:", brief)
+        self.assertIn("Edit scope:", brief)
+        self.assertIn("User approval: yes", brief)
+        self.assertIn("Direct mode", brief)
+        self.assertIn("Never fabricate", brief)
 
     def test_docs_do_not_show_generate_or_edit_without_brief_gate(self):
         docs = []

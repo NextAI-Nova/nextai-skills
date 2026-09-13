@@ -61,7 +61,7 @@ If configuration is missing, `ensure-ready` stops the current flow and starts th
 - `/v1/images/generations`
 - `/v1/images/edits`
 
-After saving, the setup server persists configuration and shuts down automatically. Secrets are written to the user secret file, never to the skill folder, Git, logs, or agent replies.
+After saving, the setup server persists configuration and shuts down automatically. Configuration is stored at the user level (`~/.config/image-forge/`), so it works from any working directory; switching directories does not require re-configuration. An optional project-level `.image-forge/config.json` can override `defaultModel` and `outputDir` for one project only. On first run after upgrading, existing project-level `defaultModel`/`outputDir` values are migrated to the user-level config automatically. Secrets are written to the user secret file, never to the skill folder, Git, logs, or agent replies.
 
 Generated and edited images are saved by default directly in the project root. ImageForge writes `.png` image files only; it does not create `ImageForge/outputs/YYYY-MM-DD/` or output sidecar `.json` files.
 

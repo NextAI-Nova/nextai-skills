@@ -33,13 +33,15 @@ ensure-ready runs preflight. If configuration is missing, it stops the current f
 
 After `ensure-ready` passes and before any image generation or editing command, Read `references/image-brief.md`.
 
-You MUST complete the Image Brief Brainstorming Workflow before calling `generate` or `edit`. Maintain a visible checklist for the workflow. Do not compress the workflow into one brief. Do not answer the user's first normal image request with an Approved Image Brief, final prompt, or generation command.
+Before calling `generate` or `edit`, present a compact Approved Image Brief and get user confirmation. Keep the interaction short:
 
-Do not run `generate` or `edit` until the agent has explored context, asked clarifying questions one at a time, proposed 2-3 approaches, presented design sections, captured design confirmations, completed brief self-review, and the user approves the brief. Ask one question at a time and stop after the first question.
+- If the request already contains enough information (subject, use, style/composition intent), present the brief in your first response and ask for one confirmation, then run.
+- If key information is missing, ask all clarifying questions in one batch (do not ask one question at a time), then present the brief for one confirmation.
+- Only iterate further when the user requests changes or information is genuinely ambiguous.
 
-The helper enforces this gate: normal generation/editing must pass a structured `--brief '<approved brief>'` with question/answer evidence, 2-3 approaches, design confirmations, self-review, and explicit user approval. Hollow or one-line briefs are rejected before any provider call.
+The helper enforces this gate: normal generation/editing must pass a structured `--brief '<approved brief>'` with explicit user approval. Hollow or one-line briefs are rejected before any provider call.
 
-Direct mode: if the user explicitly says to generate/edit directly, not ask questions, or use the prompt exactly as written, skip clarification questions, briefly restate the execution understanding, then proceed with `--direct`. Do not use `--direct` unless the user explicitly asked to skip clarification.
+Direct mode: if the user explicitly says to generate/edit directly, not ask questions, or use the prompt exactly as written, skip the brief entirely and proceed with `--direct`. Do not use `--direct` unless the user explicitly asked to skip clarification.
 
 ## Hard Rules
 
@@ -65,9 +67,12 @@ Do not make normal users configure `PATH`. `image-forge` is only a convenience a
 Configuration priority:
 
 1. Fixed API URL: `https://www.nextai-code.com/v1`
-2. `IMAGE_FORGE_API_KEY`, `IMAGE_FORGE_MODEL`
-3. Project config at `.image-forge/config.json` for `defaultModel` and `outputDir`
-4. User secret at `~/.config/image-forge/secrets.json` for `apiKey`
+2. `IMAGE_FORGE_API_KEY`, `IMAGE_FORGE_MODEL` environment variables
+3. Project-level override at `.image-forge/config.json` (`defaultModel`, `outputDir`) — optional, overrides the user-level config for this directory only
+4. User-level global config at `~/.config/image-forge/config.json` (`defaultModel`, `outputDir`) — shared across all working directories
+5. User secret at `~/.config/image-forge/secrets.json` (`apiKey`) — global
+
+Configuration is stored at the user level by default, so it works in any working directory. A project-level `.image-forge/config.json` is only needed to override the model or output directory for one project. On first run after upgrading, any existing project-level `defaultModel`/`outputDir` is migrated to the user-level config automatically.
 
 `IMAGE_FORGE_API_URL` and `.image-forge/config.json` `apiUrl` are accepted only when they equal `https://www.nextai-code.com` or `https://www.nextai-code.com/v1`; any other URL is rejected before provider calls.
 

@@ -43,14 +43,24 @@ Fix:
 
 ## `provider_rejected` or `protocol_error`
 
-Cause: the provider rejected the request, returned invalid JSON, omitted `data`, or omitted `data[].b64_json`.
+Cause: the provider rejected the request, returned invalid JSON, omitted `data`, or omitted both `data[].b64_json` and `data[].url`.
 
 Fix:
 
 - Confirm NextAI Code is reachable and implements OpenAI-compatible `/v1/images/generations` and `/v1/images/edits`.
 - Confirm the configured model is accepted by NextAI Code.
 - Confirm the requested `--size`, `--quality`, and `--n` values are supported by that provider.
-- For URL-only responses, use a NextAI Code configuration that returns `data[].b64_json`.
+- Image responses may return either `data[].b64_json` (decoded and written directly) or `data[].url` (downloaded then written). Both produce the same on-disk `.png` output. If both fields are present, `b64_json` wins.
+
+## `download_failed`
+
+Cause: the provider returned an image URL but downloading it failed (network error, HTTP error, expired link).
+
+Fix:
+
+- The error message keeps the original URL; the user can fetch the image manually.
+- Retry the generation, or ask the provider to return `data[].b64_json` instead of URLs.
+- Check proxy/VPN/firewall access to the URL host.
 
 ## `multi_image_unsupported`
 

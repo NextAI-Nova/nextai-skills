@@ -58,6 +58,10 @@ def project_config_path(cwd):
     return os.path.join(cwd, ".image-forge", "config.json")
 
 
+def user_config_path(home):
+    return os.path.join(home, ".config", "image-forge", "config.json")
+
+
 def user_secret_path(home):
     return os.path.join(home, ".config", "image-forge", "secrets.json")
 
@@ -108,17 +112,46 @@ def enforce_nextai_api_url(value):
 
 
 def configure_values(cwd, home, api_url=None, api_key=None, default_model=None):
-    result = {"projectConfigSaved": False, "secretSaved": False}
+    result = {"userConfigSaved": False, "secretSaved": False, "migrated": False}
     enforce_nextai_api_url(api_url)
-    config_path = project_config_path(cwd)
-    project_config = read_json(config_path)
-    project_config["apiUrl"] = FIXED_API_URL
+    home = home or os.path.expanduser("~")
+
+    # Idempotent migration: promote a legacy project-level defaultModel/outputDir
+    # to the user-level config once, so configuration works from any directory.
+    project_config = read_json(project_config_path(cwd))
+    user_config_path_value = user_config_path(home)
+    user_config = read_json(user_config_path_value)
+    original_user_config = dict(user_config)
+    migrated_fields = []
+    if project_config.get("defaultModel") and not user_config.get("defaultModel"):
+        user_config["defaultModel"] = project_config["defaultModel"]
+        migrated_fields.append("defaultModel")
+    if project_config.get("outputDir") and not user_config.get("outputDir"):
+        user_config["outputDir"] = project_config["outputDir"]
+        migrated_fields.append("outputDir")
+    if migrated_fields:
+        result["migrated"] = True
+        result["migratedFields"] = migrated_fields
+
+    # Persist to the user-level config (non-secret, shared across projects).
+    # Write only when something actually changed, so repeated calls are no-ops.
+    user_config["apiUrl"] = FIXED_API_URL
     if default_model:
+        user_config["defaultModel"] = default_model
+    if user_config != original_user_config or not os.path.exists(user_config_path_value):
+        if user_config:
+            write_json(user_config_path_value, user_config)
+            result["userConfigSaved"] = True
+            result["userConfigPath"] = user_config_path_value
+
+    # Project-level config remains supported as a directory override for
+    # defaultModel/outputDir; written only when an explicit value is provided.
+    if default_model:
+        project_config["apiUrl"] = FIXED_API_URL
         project_config["defaultModel"] = default_model
-    if api_url is not None or default_model:
-        write_json(config_path, project_config)
+        write_json(project_config_path(cwd), project_config)
         result["projectConfigSaved"] = True
-        result["projectConfigPath"] = config_path
+        result["projectConfigPath"] = project_config_path(cwd)
 
     if api_key:
         secret_path = user_secret_path(home)
@@ -135,17 +168,25 @@ def load_effective_config(cwd=None, home=None, env=None):
     home = home or os.path.expanduser("~")
     env = os.environ if env is None else env
     project_config = read_json(project_config_path(cwd))
+    user_config = read_json(user_config_path(home))
     secret_config = read_json(user_secret_path(home))
     configured_api_url = env.get("IMAGE_FORGE_API_URL") or project_config.get("apiUrl") or FIXED_API_URL
     api_url = enforce_nextai_api_url(configured_api_url)
     api_key = env.get("IMAGE_FORGE_API_KEY") or secret_config.get("apiKey") or ""
-    model = env.get("IMAGE_FORGE_MODEL") or project_config.get("defaultModel") or ""
-    output_dir = project_config.get("outputDir") or DEFAULT_OUTPUT_DIR
+    # Priority: environment > project-level override > user-level global > default.
+    model = (
+        env.get("IMAGE_FORGE_MODEL")
+        or project_config.get("defaultModel")
+        or user_config.get("defaultModel")
+        or ""
+    )
+    output_dir = project_config.get("outputDir") or user_config.get("outputDir") or DEFAULT_OUTPUT_DIR
     return {
         "apiUrl": api_url.rstrip("/"),
         "apiKey": api_key.strip(),
         "model": model,
         "outputDir": output_dir,
+        "userConfigPath": user_config_path(home),
     }
 
 
@@ -179,7 +220,11 @@ def build_generation_request(config, prompt, size=DEFAULT_SIZE, quality=None, n=
     if quality:
         payload["quality"] = quality
     body = json.dumps(payload).encode("utf-8")
-    headers = {"Authorization": "Bearer " + config["apiKey"], "Content-Type": "application/json"}
+    headers = {
+        "Authorization": "Bearer " + config["apiKey"],
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X) ImageForge/0.1",
+    }
     return api_endpoint(config["apiUrl"], "/images/generations"), headers, body
 
 
@@ -225,6 +270,7 @@ def build_edit_request(config, image_paths, prompt, size=DEFAULT_SIZE):
     headers = {
         "Authorization": "Bearer " + config["apiKey"],
         "Content-Type": "multipart/form-data; boundary=" + boundary,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X) ImageForge/0.1",
     }
     return api_endpoint(config["apiUrl"], "/images/edits"), headers, body
 
@@ -250,7 +296,7 @@ def resolve_default_output_dir(config, cwd=None):
     return os.path.abspath(os.path.join(cwd or os.getcwd(), output_dir))
 
 
-APPROVED_BRIEF_REQUIRED_FIELDS = (
+BRIEF_V1_FIELDS = (
     "Context",
     "Questions answered",
     "Approaches considered",
@@ -267,10 +313,21 @@ APPROVED_BRIEF_REQUIRED_FIELDS = (
     "User approval",
 )
 
+BRIEF_V2_FIELDS = (
+    "Context",
+    "Requirements",
+    "Approach",
+    "Constraints",
+    "Edit scope",
+    "User approval",
+)
 
-def extract_approved_brief_fields(brief):
+BRIEF_REQUIRED_FIELDS = BRIEF_V1_FIELDS
+
+
+def extract_brief_fields(brief, fields_spec):
     field_pattern = re.compile(
-        r"^({0}):\s*(.*)$".format("|".join(re.escape(field) for field in APPROVED_BRIEF_REQUIRED_FIELDS))
+        r"^({0}):\s*(.*)$".format("|".join(re.escape(field) for field in fields_spec))
     )
     fields = {}
     current_field = None
@@ -292,17 +349,35 @@ def extract_approved_brief_fields(brief):
     return fields
 
 
+def extract_approved_brief_fields(brief):
+    return extract_brief_fields(brief, BRIEF_V1_FIELDS)
+
+
 def validate_brief_fields_are_complete(fields):
     placeholder_pattern = re.compile(r"^(?:tbd|todo|placeholder|待定|未定|稍后补充|以后再说)$", re.I)
     incomplete = []
-    for field in APPROVED_BRIEF_REQUIRED_FIELDS:
+    for field in BRIEF_V1_FIELDS:
         value = fields.get(field, "").strip()
         if not value or placeholder_pattern.match(value):
             incomplete.append(field)
     if incomplete:
         raise ImageForgeError(
             "brief_required",
-            "Approved Image Brief has empty or placeholder fields: {0}. Complete the Image Brief Brainstorming Workflow first.".format(", ".join(incomplete)),
+            "Approved Image Brief has empty or placeholder fields: {0}. Complete the Image Brief first.".format(", ".join(incomplete)),
+        )
+
+
+def validate_v2_brief_fields_are_complete(fields):
+    placeholder_pattern = re.compile(r"^(?:tbd|todo|placeholder|待定|未定|稍后补充|以后再说)$", re.I)
+    incomplete = []
+    for field in BRIEF_V2_FIELDS:
+        value = fields.get(field, "").strip()
+        if not value or placeholder_pattern.match(value):
+            incomplete.append(field)
+    if incomplete:
+        raise ImageForgeError(
+            "brief_required",
+            "Approved Image Brief has empty or placeholder fields: {0}. Complete the Image Brief first.".format(", ".join(incomplete)),
         )
 
 
@@ -343,16 +418,34 @@ def validate_brief_has_brainstorming_evidence(fields):
         )
 
 
+def validate_user_approval(fields):
+    approval = fields["User approval"].strip()
+    if re.search(r"^(?:no|not approved|未确认|不同意|不通过)", approval, re.I) or not re.search(r"yes|approved|confirmed|确认|同意|通过", approval, re.I):
+        raise ImageForgeError(
+            "brief_required",
+            "Approved Image Brief must include explicit User approval: yes/confirmed before generation or editing.",
+        )
+
+
 def validate_approved_brief(brief):
-    missing = []
     if "Approved Image Brief" not in brief:
-        missing.append("Approved Image Brief")
+        raise ImageForgeError(
+            "brief_required",
+            "A structured Approved Image Brief is required before generation or editing. Present the brief, get user approval, then rerun with --brief '<approved brief>'.",
+        )
+    # Compact v2 format: 6 fields, only explicit user approval is mandatory.
+    v2_fields = extract_brief_fields(brief, BRIEF_V2_FIELDS)
+    if "User approval" in v2_fields and v2_fields.get("Requirements", "").strip():
+        validate_v2_brief_fields_are_complete(v2_fields)
+        validate_user_approval(v2_fields)
+        return
+    # Legacy v1 format: keep full validation for backward compatibility.
     fields = extract_approved_brief_fields(brief)
-    missing.extend([field + ":" for field in APPROVED_BRIEF_REQUIRED_FIELDS if field not in fields])
+    missing = [field + ":" for field in BRIEF_V1_FIELDS if field not in fields]
     if missing:
         raise ImageForgeError(
             "brief_required",
-            "A structured Approved Image Brief is required before generation or editing. Missing fields: {0}. Complete the Image Brief Brainstorming Workflow first, then rerun with --brief '<approved brief>'.".format(", ".join(missing)),
+            "A structured Approved Image Brief is required before generation or editing. Missing fields: {0}. Present the brief, get user approval, then rerun with --brief '<approved brief>'.".format(", ".join(missing)),
         )
     validate_brief_fields_are_complete(fields)
     validate_brief_has_brainstorming_evidence(fields)
@@ -377,7 +470,41 @@ def require_image_brief(brief=None, direct=False):
     )
 
 
-def write_image_outputs(response, output_dir, output_name):
+def download_image_bytes(url, timeout=120):
+    req = request.Request(url, method="GET")
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except error.HTTPError as exc:
+        raise ImageForgeError(
+            "download_failed",
+            "Image URL download failed (HTTP {0}). You can fetch the image manually at: {1}".format(exc.code, url),
+        )
+    except error.URLError as exc:
+        raise ImageForgeError(
+            "download_failed",
+            "Image URL download failed ({0}). You can fetch the image manually at: {1}".format(redact(str(exc)), url),
+        )
+
+
+def extract_image_bytes(item, download_func=None):
+    # Priority by field presence: b64_json first, then url. Never assume both.
+    if item.get("b64_json"):
+        try:
+            return base64.b64decode(item["b64_json"])
+        except (ValueError, TypeError):
+            raise ImageForgeError("protocol_error", "Image response b64_json contained invalid base64 data")
+    url_value = (item.get("url") or "").strip()
+    if url_value:
+        fetch = download_func or download_image_bytes
+        return fetch(url_value)
+    raise ImageForgeError(
+        "protocol_error",
+        "Image response did not include b64_json or url. The provider returned no image data for this item.",
+    )
+
+
+def write_image_outputs(response, output_dir, output_name, download_func=None):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     written = []
@@ -385,10 +512,7 @@ def write_image_outputs(response, output_dir, output_name):
     for index, item in enumerate(items, 1):
         name = "{0}-{1:02d}".format(output_name, index)
         image_path = os.path.join(output_dir, name + ".png")
-        if item.get("b64_json"):
-            image_bytes = base64.b64decode(item["b64_json"])
-        else:
-            raise ImageForgeError("protocol_error", "Image response did not include b64_json")
+        image_bytes = extract_image_bytes(item, download_func=download_func)
         with open(image_path, "wb") as handle:
             handle.write(image_bytes)
         written.append({"imagePath": image_path})
@@ -459,6 +583,7 @@ def doctor(cwd=None, home=None, env=None):
         "model": config.get("model") or "",
         "apiKey": "configured" if config.get("apiKey") else "missing",
         "projectConfigPath": project_config_path(cwd),
+        "userConfigPath": user_config_path(home),
         "userSecretPath": secret_path,
         "userSecretMode": secret_mode,
         "version": SKILL_VERSION,
@@ -482,6 +607,7 @@ def preflight(cwd=None, home=None, env=None):
         "model": config["model"],
         "apiKey": "configured",
         "projectConfigPath": project_config_path(cwd),
+        "userConfigPath": user_config_path(home),
         "userSecretPath": user_secret_path(home),
     }
 
@@ -920,6 +1046,15 @@ def run_setup_server(cwd=None, home=None, port=0, open_browser=True, timeout_sec
 def ensure_ready(cwd=None, home=None, env=None, setup_func=None):
     cwd = cwd or os.getcwd()
     home = home or os.path.expanduser("~")
+    # Eager idempotent migration: promote legacy project-level
+    # defaultModel/outputDir to the user-level config so configuration is
+    # portable across directories. Runs before preflight so even already-
+    # configured legacy projects get promoted on their first upgraded run.
+    # Safe on every run: writes only when something actually changes.
+    try:
+        configure_values(cwd=cwd, home=home)
+    except ImageForgeError:
+        pass
     try:
         return preflight(cwd=cwd, home=home, env=env)
     except ImageForgeError as exc:
