@@ -214,11 +214,30 @@ def api_endpoint(api_url, suffix):
     return base + "/v1" + suffix
 
 
-def build_generation_request(config, prompt, size=DEFAULT_SIZE, quality=None, n=1):
+RESPONSE_FORMATS = ("url", "b64_json")
+DEFAULT_RESPONSE_FORMAT = "b64_json"
+
+
+def normalize_response_format(value):
+    if value is None or value == "":
+        return None
+    normalized = str(value).strip().lower()
+    if normalized not in RESPONSE_FORMATS:
+        raise ImageForgeError(
+            "invalid_response_format",
+            "response_format must be 'url' or 'b64_json'.",
+        )
+    return normalized
+
+
+def build_generation_request(config, prompt, size=DEFAULT_SIZE, quality=None, n=1, response_format=DEFAULT_RESPONSE_FORMAT):
     require_config(config)
     payload = {"model": config["model"], "prompt": prompt, "size": size, "n": int(n)}
     if quality:
         payload["quality"] = quality
+    # Always send response_format; b64_json by default, explicitly overridable to url.
+    response_format = normalize_response_format(response_format) or DEFAULT_RESPONSE_FORMAT
+    payload["response_format"] = response_format
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": "Bearer " + config["apiKey"],
@@ -540,9 +559,9 @@ def http_json(url, headers, body, timeout=120):
         raise ImageForgeError("protocol_error", "Provider returned invalid JSON")
 
 
-def generate_image(prompt, size=DEFAULT_SIZE, quality=None, n=1, output_dir=None, output_name=None, cwd=None, home=None, env=None, brief=None, direct=False):
+def generate_image(prompt, size=DEFAULT_SIZE, quality=None, n=1, output_dir=None, output_name=None, cwd=None, home=None, env=None, brief=None, direct=False, response_format=DEFAULT_RESPONSE_FORMAT):
     config = load_effective_config(cwd=cwd, home=home, env=env)
-    url, headers, body = build_generation_request(config, prompt=prompt, size=size, quality=quality, n=n)
+    url, headers, body = build_generation_request(config, prompt=prompt, size=size, quality=quality, n=n, response_format=response_format)
     require_image_brief(brief=brief, direct=direct)
     response = http_json(url, headers, body)
     final_output_dir = output_dir or resolve_default_output_dir(config, cwd=cwd)
@@ -1183,6 +1202,9 @@ def parse_args(argv):
     generate_parser.add_argument("--model")
     generate_parser.add_argument("--size", default=DEFAULT_SIZE)
     generate_parser.add_argument("--quality")
+    generate_parser.add_argument("--response-format", choices=list(RESPONSE_FORMATS),
+                                 default=DEFAULT_RESPONSE_FORMAT,
+                                 help="Provider response format: url or b64_json (default: b64_json).")
     generate_parser.add_argument("--n", type=int, default=1)
     generate_parser.add_argument("--output-dir")
     generate_parser.add_argument("--output-name")
@@ -1265,6 +1287,7 @@ def main(argv=None):
                 prompt=args.prompt,
                 size=args.size,
                 quality=args.quality,
+                response_format=args.response_format,
                 n=args.n,
                 output_dir=args.output_dir,
                 output_name=args.output_name,

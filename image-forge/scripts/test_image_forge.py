@@ -771,6 +771,78 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("plain-bearer-secret", redacted)
         self.assertIn("<REDACTED>", redacted)
 
+    def test_build_generation_request_defaults_response_format_to_b64_json(self):
+        config = {
+            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiKey": "sk-secret",
+            "model": "gpt-image-2",
+            "outputDir": ".",
+        }
+        for value in (None, ""):
+            _url, _headers, body = self.mod.build_generation_request(
+                config=config,
+                prompt="a brass robot watering a bonsai",
+                response_format=value,
+            )
+            payload = json.loads(body.decode("utf-8"))
+            self.assertEqual(payload["response_format"], "b64_json")
+        # Explicit position arg omitted entirely also defaults to b64_json.
+        _url, _headers, body = self.mod.build_generation_request(
+            config=config,
+            prompt="a brass robot watering a bonsai",
+        )
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["response_format"], "b64_json")
+
+    def test_build_generation_request_passes_response_format_through(self):
+        config = {
+            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiKey": "sk-secret",
+            "model": "gpt-image-2",
+            "outputDir": ".",
+        }
+        for value, expected in [("url", "url"), ("b64_json", "b64_json"), (" B64_JSON ", "b64_json")]:
+            _url, _headers, body = self.mod.build_generation_request(
+                config=config,
+                prompt="robot",
+                response_format=value,
+            )
+            payload = json.loads(body.decode("utf-8"))
+            self.assertEqual(payload["response_format"], expected)
+
+    def test_build_generation_request_rejects_invalid_response_format(self):
+        config = {
+            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiKey": "sk-secret",
+            "model": "gpt-image-2",
+            "outputDir": ".",
+        }
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.build_generation_request(
+                config=config,
+                prompt="robot",
+                response_format="base64",
+            )
+        self.assertEqual(ctx.exception.code, "invalid_response_format")
+
+    def test_parse_generate_accepts_response_format_flag(self):
+        args = self.mod.parse_args([
+            "generate",
+            "--prompt", "robot",
+            "--response-format", "url",
+        ])
+        self.assertEqual(args.response_format, "url")
+        args_default = self.mod.parse_args(["generate", "--prompt", "robot"])
+        self.assertEqual(args_default.response_format, "b64_json")
+
+    def test_parse_generate_rejects_unknown_response_format(self):
+        with self.assertRaises(SystemExit):
+            self.mod.parse_args([
+                "generate",
+                "--prompt", "robot",
+                "--response-format", "png",
+            ])
+
     def test_build_generation_request_uses_openai_endpoint(self):
         config = {
             "apiUrl": "https://www.nextai-code.com/v1",
