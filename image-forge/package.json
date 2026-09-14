@@ -1,0 +1,35 @@
+{
+  "name": "nextai-image-forge",
+  "version": "1.0.0",
+  "description": "Generate and edit raster images with the fixed NextAI Code image API (agent skill + CLI helper).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NextAI-Nova/nextai-skills.git",
+    "directory": "image-forge"
+  },
+  "keywords": [
+    "image",
+    "image-generation",
+    "image-editing",
+    "nextai",
+    "agent-skills",
+    "cli"
+  ],
+  "bin": {
+    "image-forge": "bin/image-forge"
+  },
+  "files": [
+    "bin/",
+    "scripts/image_forge.py",
+    "SKILL.md",
+    "references/",
+    "agents/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "preferGlobal": false,
+  "private": false
+}
