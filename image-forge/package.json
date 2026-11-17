@@ -1,6 +1,6 @@
 {
   "name": "nextai-image-forge",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Generate and edit raster images with the fixed NextAI Code image API (agent skill + CLI helper).",
   "license": "MIT",
   "repository": {

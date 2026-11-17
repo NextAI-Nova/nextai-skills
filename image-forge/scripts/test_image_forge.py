@@ -3,6 +3,7 @@ import io
 import importlib.util
 import json
 import os
+import re
 import stat
 import tempfile
 import threading
@@ -21,6 +22,9 @@ def load_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+PACKAGE_JSON_PATH = os.path.join(SKILL_ROOT, "package.json")
 
 
 class ConfigTests(unittest.TestCase):
@@ -1511,6 +1515,20 @@ class SkillInstructionTests(unittest.TestCase):
     def read_image_brief(self):
         with io.open(IMAGE_BRIEF_PATH, encoding="utf-8") as handle:
             return handle.read()
+
+    def test_skill_version_matches_package_version(self):
+        with io.open(PACKAGE_JSON_PATH, encoding="utf-8") as handle:
+            package_version = json.load(handle)["version"]
+        with io.open(MODULE_PATH, encoding="utf-8") as handle:
+            source = handle.read()
+        match = re.search(r'^SKILL_VERSION = "([^"]+)"', source, re.M)
+
+        self.assertIsNotNone(match, "SKILL_VERSION not found in image_forge.py")
+        self.assertEqual(
+            match.group(1),
+            package_version,
+            "SKILL_VERSION and package.json version must match",
+        )
 
     def test_skill_requires_preflight_as_first_step_for_every_use(self):
         skill = self.read_skill()

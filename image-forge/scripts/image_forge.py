@@ -20,7 +20,7 @@ from mimetypes import guess_type
 from urllib import error, parse, request
 
 
-SKILL_VERSION = "1.1.0"
+SKILL_VERSION = "2.0.0"
 DEFAULT_MODEL = "gpt-image-2"
 NEXTAI_API_ORIGIN = "https://www.nextairouter.com"
 LEGACY_API_ORIGINS = ("https://www.nextai-code.com",)
