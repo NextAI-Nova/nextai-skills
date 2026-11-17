@@ -20,7 +20,7 @@ from mimetypes import guess_type
 from urllib import error, parse, request
 
 
-SKILL_VERSION = "2.0.0"
+SKILL_VERSION = "2.1.0"
 DEFAULT_MODEL = "gpt-image-2"
 NEXTAI_API_ORIGIN = "https://www.nextairouter.com"
 LEGACY_API_ORIGINS = ("https://www.nextai-code.com",)
@@ -763,6 +763,58 @@ def http_json(url, headers, body, timeout=120):
         raise ImageForgeError("protocol_error", "Provider returned invalid JSON")
 
 
+def http_get_json(url, headers, timeout=30):
+    req = request.Request(url, method="GET")
+    for key, value in headers.items():
+        req.add_header(key, value)
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw)
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        if exc.code in (401, 403):
+            raise ImageForgeError("auth_failed", "Authentication failed: " + redact(raw))
+        raise ImageForgeError("provider_rejected", "Provider rejected request: " + redact(raw))
+    except error.URLError as exc:
+        raise ImageForgeError("network_error", "Network error: " + redact(exc))
+    except ValueError:
+        raise ImageForgeError("protocol_error", "Provider returned invalid JSON")
+
+
+def fetch_available_models(api_key, api_url=None, get_func=None, timeout=30):
+    if not api_key:
+        raise ImageForgeError("missing_config", "API Key is required to list models.")
+    url = api_endpoint(enforce_nextai_api_url(api_url or FIXED_API_URL), "/models")
+    headers = {
+        "Authorization": "Bearer " + api_key,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X) ImageForge/0.1",
+    }
+    fetch = get_func or http_get_json
+    payload = fetch(url, headers, timeout)
+    items = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise ImageForgeError("protocol_error", "Provider returned an unexpected model list.")
+    names = []
+    for item in items:
+        if isinstance(item, str):
+            names.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("id") or item.get("model") or "").strip()
+        if not name:
+            continue
+        # ImageForge only generates images, so drop models the gateway marks as
+        # non-image when that metadata is present. Gateways that return a bare
+        # id list carry no metadata and are kept as-is.
+        endpoints = item.get("supported_endpoint_types")
+        if isinstance(endpoints, list) and endpoints and "image-generation" not in endpoints:
+            continue
+        names.append(name)
+    return sorted({name for name in names if name})
+
+
 def generate_image(
     prompt,
     size=DEFAULT_SIZE,
@@ -923,6 +975,76 @@ def setup_interactive(cwd=None, home=None, input_func=None, secret_prompt_func=N
         default_model=default_model,
     )
     return preflight(cwd=cwd, home=home, env={})
+
+
+# Model picker: fetches the models the entered API key can use and feeds them
+# into the datalist so the field offers a dropdown while still accepting a
+# manually typed name. Kept out of the HTML template so the template's
+# .format() brace escaping does not apply to JavaScript.
+MODEL_PICKER_SCRIPT = """
+(function () {
+  var input = document.getElementById('default_model');
+  var dataList = document.getElementById('model-options');
+  var button = document.getElementById('load-models');
+  var status = document.getElementById('model-status');
+  var keyInput = document.getElementById('api_key');
+  var tokenInput = document.querySelector('input[name="token"]');
+  if (!input || !dataList || !button || !status || !keyInput || !tokenInput) return;
+
+  var autoLoad = status.getAttribute('data-has-key') === '1';
+
+  function setStatus(text, isError) {
+    status.textContent = text;
+    status.className = isError ? 'hint hint-error' : 'hint';
+  }
+
+  function load(isAuto) {
+    var body = new URLSearchParams();
+    body.set('token', tokenInput.value);
+    body.set('api_key', keyInput.value.trim());
+    button.disabled = true;
+    setStatus(isAuto ? '正在读取可用模型…' : '正在获取模型…', false);
+    fetch('models', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function (response) {
+      return response.json().then(
+        function (data) { return {ok: response.ok, data: data}; },
+        function () { return {ok: false, data: {}}; }
+      );
+    }).then(function (result) {
+      button.disabled = false;
+      if (!result.ok) {
+        setStatus((result.data && result.data.message) || '获取模型失败，可手动填写模型名。', true);
+        return;
+      }
+      var models = (result.data && result.data.models) || [];
+      dataList.innerHTML = '';
+      models.forEach(function (name) {
+        var option = document.createElement('option');
+        option.value = name;
+        dataList.appendChild(option);
+      });
+      if (!models.length) {
+        setStatus('没有可选模型，可手动填写模型名。', true);
+        return;
+      }
+      setStatus('已获取 ' + models.length + ' 个模型，点击输入框或下拉箭头选择。', false);
+    }).catch(function () {
+      button.disabled = false;
+      setStatus('获取模型失败，可手动填写模型名。', true);
+    });
+  }
+
+  button.addEventListener('click', function (event) {
+    event.preventDefault();
+    load(false);
+  });
+
+  if (autoLoad) load(true);
+})();
+"""
 
 
 def setup_form_html(config, token, error_message=None):
@@ -1106,6 +1228,15 @@ def setup_form_html(config, token, error_message=None):
     }}
     button:hover {{ background:#0f5fd6; box-shadow:0 18px 34px rgba(37,99,235,.28); }}
     button:active {{ transform: translateY(1px); }}
+    .input-row .secondary {{
+      width:auto; border-radius:0 14px 14px 0; padding:0 16px;
+      border:1px solid #c7dcf5; background:#eff6ff; color:var(--blue);
+      font-weight:800; box-shadow:none; white-space:nowrap;
+    }}
+    .input-row .secondary:hover {{ background:#e3efff; box-shadow:none; }}
+    .input-row .secondary:disabled {{ opacity:.62; cursor:progress; }}
+    .hint[data-has-key="0"] {{ color:var(--muted); }}
+    .hint-error {{ color:#b91c1c !important; }}
     .alert {{ margin: 0 0 18px; padding: 13px 15px; border-radius: 14px; line-height:1.55; }}
     .alert-error {{ background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; }}
     @media (max-width: 820px) {{
@@ -1149,7 +1280,12 @@ def setup_form_html(config, token, error_message=None):
           </div>
           <div class="field">
             <label for="default_model">默认模型</label>
-            <input id="default_model" name="default_model" value="{model}" placeholder="{default_model}" required>
+            <div class="input-row">
+              <input id="default_model" name="default_model" value="{model}" placeholder="{default_model}" list="model-options" autocomplete="off" required>
+              <button type="button" class="secondary" id="load-models">获取模型</button>
+            </div>
+            <datalist id="model-options"></datalist>
+            <small id="model-status" class="hint" data-has-key="{has_key}">可点击“获取模型”从当前 API Key 读取可用模型，也可手动填写。</small>
           </div>
           <div class="actions">
             <button type="submit">保存配置</button>
@@ -1158,6 +1294,7 @@ def setup_form_html(config, token, error_message=None):
       </section>
     </main>
   </div>
+  <script>{model_picker_script}</script>
 </body>
 </html>""".format(
         api_url=api_url,
@@ -1165,8 +1302,10 @@ def setup_form_html(config, token, error_message=None):
         api_key_required=api_key_required,
         default_model=html.escape(DEFAULT_MODEL, quote=True),
         error_block=error_block,
+        has_key="1" if config.get("apiKey") else "0",
         key_hint=html.escape(key_hint),
         model=model,
+        model_picker_script=MODEL_PICKER_SCRIPT,
         nextai_origin=html.escape(NEXTAI_API_ORIGIN, quote=True),
         token=escaped_token,
     )
@@ -1221,6 +1360,29 @@ def create_setup_server(cwd=None, home=None, host="127.0.0.1", port=0, token=Non
             self.end_headers()
             self.wfile.write(encoded)
 
+        def send_json(self, status, payload):
+            encoded = json.dumps(payload).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def handle_models(self, fields):
+            provided_key = (fields.get("api_key") or [""])[0].strip()
+            existing = load_effective_config(cwd=cwd, home=home, env={})
+            api_key = provided_key or existing.get("apiKey") or ""
+            if not api_key:
+                self.send_json(400, {"error": "missing_config", "message": "请先填写 API Key，再获取模型。"})
+                return
+            try:
+                models = fetch_available_models(api_key)
+            except ImageForgeError as exc:
+                self.send_json(400, {"error": exc.code, "message": redact(str(exc))})
+                return
+            self.send_json(200, {"models": models, "count": len(models)})
+
         def token_from_query(self):
             parsed = parse.urlparse(self.path)
             return (parse.parse_qs(parsed.query).get("token") or [""])[0]
@@ -1244,7 +1406,7 @@ def create_setup_server(cwd=None, home=None, host="127.0.0.1", port=0, token=Non
 
         def do_POST(self):
             parsed = parse.urlparse(self.path)
-            if parsed.path != "/setup":
+            if parsed.path not in ("/setup", "/models"):
                 self.send_html(404, "Not found")
                 return
             length = int(self.headers.get("Content-Length") or "0")
@@ -1256,6 +1418,11 @@ def create_setup_server(cwd=None, home=None, host="127.0.0.1", port=0, token=Non
             if not self.authorized(fields):
                 self.send_html(403, "Invalid or expired setup link")
                 return
+            if parsed.path == "/models":
+                self.handle_models(fields)
+                return
+
+            existing = load_effective_config(cwd=cwd, home=home, env={})
 
             existing = load_effective_config(cwd=cwd, home=home, env={})
             api_url = FIXED_API_URL

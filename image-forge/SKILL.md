@@ -89,7 +89,7 @@ python3 "$IMAGE_FORGE_SCRIPT" ensure-ready
 4. Wait for the user to submit API key and default model in the local page.
 5. Continue only after `ensure-ready` returns ready.
 
-The setup page listens on `127.0.0.1`, uses a one-time token URL, never echoes the API key, shows the locked NextAI Code URL, links to `https://www.nextairouter.com` for registration/API key retrieval, persists configuration, and shuts down after saving.
+The setup page listens on `127.0.0.1`, uses a one-time token URL, never echoes the API key, shows the locked NextAI Code URL, links to `https://www.nextairouter.com` for registration/API key retrieval, persists configuration, and shuts down after saving. Its 默认模型 field offers a 获取模型 button and a dropdown: the page calls the gateway's `/v1/models` with the entered (or already stored) API key, keeps only models the gateway marks as `image-generation`, and fills a `datalist`. It loads automatically when a key is already configured, and manual typing always remains possible if the lookup fails.
 
 Required readiness check:
 

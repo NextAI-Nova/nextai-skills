@@ -640,6 +640,125 @@ class ConfigTests(unittest.TestCase):
         finally:
             server.server_close()
 
+    def test_fetch_available_models_filters_to_image_models(self):
+        captured = {}
+
+        def fake_get(url, headers, timeout=30):
+            captured["url"] = url
+            captured["headers"] = headers
+            return {
+                "data": [
+                    {"id": "gpt-image-2.5", "supported_endpoint_types": ["image-generation"]},
+                    {"id": "qwen3.7-flash", "supported_endpoint_types": ["openai"]},
+                    {"id": "grok-imagine-video", "supported_endpoint_types": ["openai-video"]},
+                    {"id": "gpt-image-2", "supported_endpoint_types": ["image-generation"]},
+                ]
+            }
+
+        models = self.mod.fetch_available_models("sk-secret", get_func=fake_get)
+
+        self.assertEqual(models, ["gpt-image-2", "gpt-image-2.5"])
+        self.assertEqual(captured["url"], "https://www.nextairouter.com/v1/models")
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer sk-secret")
+
+    def test_fetch_available_models_keeps_bare_id_lists(self):
+        models = self.mod.fetch_available_models(
+            "sk-secret",
+            get_func=lambda url, headers, timeout=30: {"data": [{"id": "m-b"}, "m-a"]},
+        )
+
+        self.assertEqual(models, ["m-a", "m-b"])
+
+    def test_fetch_available_models_requires_key_and_valid_shape(self):
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.fetch_available_models("")
+        self.assertEqual(ctx.exception.code, "missing_config")
+
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.fetch_available_models(
+                "sk-secret",
+                get_func=lambda url, headers, timeout=30: {"nope": []},
+            )
+        self.assertEqual(ctx.exception.code, "protocol_error")
+
+    def test_setup_form_html_offers_model_picker(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_url="https://www.nextairouter.com/v1",
+            api_key="sk-existing-secret",
+            default_model="gpt-image-2.5",
+        )
+        config = self.mod.load_effective_config(cwd=self.cwd, home=self.home, env={})
+
+        page = self.mod.setup_form_html(config=config, token="fixed-token")
+
+        self.assertIn('id="load-models"', page)
+        self.assertIn("获取模型", page)
+        self.assertIn('list="model-options"', page)
+        self.assertIn('<datalist id="model-options">', page)
+        self.assertIn('data-has-key="1"', page)
+        self.assertIn("fetch('models'", page)
+        self.assertNotIn("sk-existing-secret", page)
+
+    def test_setup_form_html_marks_missing_key_as_zero(self):
+        config = {"apiUrl": "https://www.nextairouter.com/v1", "model": "gpt-image-2"}
+
+        page = self.mod.setup_form_html(config=config, token="fixed-token")
+
+        self.assertIn('data-has-key="0"', page)
+
+    def test_models_endpoint_returns_models_for_token(self):
+        self.mod.configure_values(
+            cwd=self.cwd,
+            home=self.home,
+            api_url="https://www.nextairouter.com/v1",
+            api_key="sk-stored-secret",
+            default_model="gpt-image-2",
+        )
+        original = self.mod.fetch_available_models
+        seen = []
+        self.mod.fetch_available_models = lambda key, *a, **k: seen.append(key) or ["gpt-image-2"]
+        server, setup_url, _state = self.mod.create_setup_server(
+            cwd=self.cwd, home=self.home, host="127.0.0.1", port=0, token="fixed-token"
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        try:
+            base = setup_url.split("/setup?")[0]
+            # Blank api_key falls back to the stored key.
+            data = parse.urlencode({"token": "fixed-token", "api_key": ""}).encode("utf-8")
+            req = request.Request(base + "/models", data=data, method="POST")
+            with request.urlopen(req, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(payload["models"], ["gpt-image-2"])
+            self.assertEqual(payload["count"], 1)
+            self.assertEqual(seen, ["sk-stored-secret"])
+        finally:
+            self.mod.fetch_available_models = original
+            server.shutdown()
+            server.server_close()
+
+    def test_models_endpoint_rejects_bad_token(self):
+        server, setup_url, _state = self.mod.create_setup_server(
+            cwd=self.cwd, home=self.home, host="127.0.0.1", port=0, token="fixed-token"
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        try:
+            base = setup_url.split("/setup?")[0]
+            data = parse.urlencode({"token": "wrong-token", "api_key": "sk-x"}).encode("utf-8")
+            req = request.Request(base + "/models", data=data, method="POST")
+            with self.assertRaises(Exception) as ctx:
+                request.urlopen(req, timeout=5)
+            self.assertIn("403", str(ctx.exception))
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_ensure_ready_returns_preflight_when_configured_without_setup(self):
         self.mod.configure_values(
             cwd=self.cwd,

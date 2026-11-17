@@ -98,6 +98,16 @@ Cause: this NextAI deployment accepts `--background transparent` and still retur
 
 Fix: no client-side workaround exists. Report the outcome honestly rather than claiming transparency was applied, and treat a real alpha channel as unavailable until the upstream supports it.
 
+## Setup page cannot list models
+
+Cause: the 获取模型 button calls `POST /v1/models` from the local setup server using the API key in the form (or the already stored key). It fails when the key is wrong, the key has no access to any image model, or the network is unavailable. Failures are shown inline and never block saving.
+
+Fix:
+
+- Confirm the key is valid and was created at `https://www.nextairouter.com`.
+- Confirm the token has image-model permission; the gateway returns `该令牌无权访问模型` for models outside the token's scope.
+- Type the model name manually — the field accepts free text, and the picker is only a convenience.
+
 ## `network_error`
 
 Cause: DNS, TLS, routing, proxy, firewall, timeout, or provider availability failure.
