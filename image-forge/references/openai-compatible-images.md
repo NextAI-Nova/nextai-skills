@@ -5,7 +5,7 @@ This open-source NextAI edition of ImageForge uses the fixed NextAI Code API bas
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-The API URL is fixed to `https://www.nextai-code.com/v1`. ImageForge appends `/images/generations` or `/images/edits`. Any configured URL outside `https://www.nextai-code.com` / `https://www.nextai-code.com/v1` is rejected before use.
+The API URL is fixed to `https://www.nextairouter.com/v1`. ImageForge appends `/images/generations` or `/images/edits`. Any configured URL outside `https://www.nextairouter.com` / `https://www.nextairouter.com/v1` is rejected before use.
 
 ImageForge has deterministic/unit and local skill discovery validation so far. Do not report a live provider as validated until generation or editing has been tested against that provider.
 
@@ -43,9 +43,15 @@ Payload basics:
 Optional generation fields supported by the helper:
 
 - `--model`: per-command model override.
-- `--size`: output size, default `1024x1024`.
+- `--size`: output size, default `1024x1024`. Pixel sizes such as `1536x1024`, `1024x1536`, and `2048x2048` work, and ratio strings such as `16:9` are accepted by models that take a ratio.
 - `--quality`: forwarded when provided.
-- `--n`: number of images requested, default `1`.
+- `--n`: number of images, `1`-`10`, default `1`.
+- `--response-format`: `url`, `b64_json` (default), or `auto` to omit the field entirely for models that reject it.
+- `--output-format`: `png`, `jpeg`, or `webp`. Omit to accept the provider default.
+- `--output-compression`: `0`-`100`, applies to `jpeg`/`webp`; dropped for `png` because it has no effect there.
+- `--background`: `auto`, `transparent`, or `opaque`. Note that this NextAI deployment currently echoes `auto` and returns an opaque PNG even when `transparent` is requested.
+- `--moderation`: `auto` or `low`.
+- `--user`: stable end-user identifier forwarded to the provider.
 - `--output-dir` and `--output-name`: local output controls.
 
 ## Edit request
@@ -69,6 +75,9 @@ Optional edit fields supported by the helper:
 
 - `--model`: per-command model override.
 - `--size`: output size, default `1024x1024`.
+- `--mask`: PNG mask for inpainting. White pixels are repainted, black pixels are preserved. Sent as a `mask` file part after the images.
+- `--input-fidelity`: `low` or `high`; controls how strictly the edit preserves the source image.
+- `--n`, `--quality`, `--response-format`, `--output-format`, `--output-compression`, `--background`, `--moderation`, `--user`: same meaning as in generation.
 - `--output-dir` and `--output-name`: local output controls.
 
 ## Response expectation
@@ -83,7 +92,7 @@ ImageForge expects JSON responses with base64 image data:
 }
 ```
 
-Each `data[].b64_json` item is decoded and written as a `.png` file directly in the project root by default. ImageForge does not create output sidecar `.json` files. URL-only image responses are treated as `protocol_error` by this helper.
+Each `data[].b64_json` item is decoded and written directly in the project root by default. The file extension follows the real payload: ImageForge sniffs PNG/JPEG/WebP/GIF magic bytes first and only falls back to the response `output_format`, so a `--output-format webp` request produces a `.webp` file. ImageForge does not create output sidecar `.json` files. URL-only image responses are accepted: the helper downloads them, and a failed download reports `download_failed` with the URL.
 
 ## Supported configuration
 

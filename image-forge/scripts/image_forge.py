@@ -20,9 +20,10 @@ from mimetypes import guess_type
 from urllib import error, parse, request
 
 
-SKILL_VERSION = "0.1.0"
+SKILL_VERSION = "1.1.0"
 DEFAULT_MODEL = "gpt-image-2"
-NEXTAI_API_ORIGIN = "https://www.nextai-code.com"
+NEXTAI_API_ORIGIN = "https://www.nextairouter.com"
+LEGACY_API_ORIGINS = ("https://www.nextai-code.com",)
 FIXED_API_URL = NEXTAI_API_ORIGIN + "/v1"
 DEFAULT_SIZE = "1024x1024"
 DEFAULT_OUTPUT_DIR = "."
@@ -96,9 +97,12 @@ def normalize_url(value):
     return (value or "").strip().rstrip("/")
 
 
+LEGACY_API_URLS = tuple(origin + "/v1" for origin in LEGACY_API_ORIGINS)
+
+
 def is_allowed_nextai_url(value):
     normalized = normalize_url(value)
-    return normalized == NEXTAI_API_ORIGIN or normalized == FIXED_API_URL
+    return normalized in ((NEXTAI_API_ORIGIN, FIXED_API_URL) + LEGACY_API_ORIGINS + LEGACY_API_URLS)
 
 
 def enforce_nextai_api_url(value):
@@ -108,6 +112,8 @@ def enforce_nextai_api_url(value):
             "invalid_api_url",
             "ImageForge NextAI edition only supports {0}/v1. Register and get an API key at {0}.".format(NEXTAI_API_ORIGIN),
         )
+    # Legacy nextai-code.com origins are accepted and rewritten to the current
+    # origin, so existing configs keep working without a manual edit.
     return FIXED_API_URL
 
 
@@ -216,28 +222,67 @@ def api_endpoint(api_url, suffix):
 
 RESPONSE_FORMATS = ("url", "b64_json")
 DEFAULT_RESPONSE_FORMAT = "b64_json"
+# Explicit opt-out: providers that only emit URLs reject b64_json (and vice
+# versa), so "auto" means "leave response_format out of the request".
+OMIT_RESPONSE_FORMAT = "auto"
+RESPONSE_FORMAT_CHOICES = list(RESPONSE_FORMATS) + [OMIT_RESPONSE_FORMAT]
 
 
 def normalize_response_format(value):
     if value is None or value == "":
-        return None
+        return DEFAULT_RESPONSE_FORMAT
     normalized = str(value).strip().lower()
+    if normalized == OMIT_RESPONSE_FORMAT:
+        return None
     if normalized not in RESPONSE_FORMATS:
         raise ImageForgeError(
             "invalid_response_format",
-            "response_format must be 'url' or 'b64_json'.",
+            "response_format must be 'url', 'b64_json', or 'auto'.",
         )
     return normalized
 
 
-def build_generation_request(config, prompt, size=DEFAULT_SIZE, quality=None, n=1, response_format=DEFAULT_RESPONSE_FORMAT):
+def build_generation_request(
+    config,
+    prompt,
+    size=DEFAULT_SIZE,
+    quality=None,
+    n=1,
+    response_format=DEFAULT_RESPONSE_FORMAT,
+    output_format=None,
+    output_compression=None,
+    background=None,
+    moderation=None,
+    user=None,
+):
     require_config(config)
-    payload = {"model": config["model"], "prompt": prompt, "size": size, "n": int(n)}
+    output_format = normalize_output_format(output_format)
+    payload = {
+        "model": config["model"],
+        "prompt": prompt,
+        "size": size,
+        "n": normalize_n(n),
+    }
     if quality:
         payload["quality"] = quality
-    # Always send response_format; b64_json by default, explicitly overridable to url.
-    response_format = normalize_response_format(response_format) or DEFAULT_RESPONSE_FORMAT
-    payload["response_format"] = response_format
+    # None means "omit": some models only accept url or only accept b64_json, so
+    # an explicit value is forwarded but an unspecified one is left out.
+    normalized_response_format = normalize_response_format(response_format)
+    if normalized_response_format:
+        payload["response_format"] = normalized_response_format
+    if output_format:
+        payload["output_format"] = output_format
+    compression = normalize_output_compression(output_compression, output_format)
+    if compression is not None:
+        payload["output_compression"] = compression
+    normalized_background = normalize_background(background)
+    if normalized_background:
+        payload["background"] = normalized_background
+    normalized_moderation = normalize_moderation(moderation)
+    if normalized_moderation:
+        payload["moderation"] = normalized_moderation
+    if user:
+        payload["user"] = user
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": "Bearer " + config["apiKey"],
@@ -271,20 +316,64 @@ def multipart_body(fields, files, boundary):
     return b"\r\n".join(chunks)
 
 
-def build_edit_request(config, image_paths, prompt, size=DEFAULT_SIZE):
+def build_edit_request(
+    config,
+    image_paths,
+    prompt,
+    size=DEFAULT_SIZE,
+    quality=None,
+    n=1,
+    response_format=DEFAULT_RESPONSE_FORMAT,
+    output_format=None,
+    output_compression=None,
+    background=None,
+    moderation=None,
+    user=None,
+    mask=None,
+    input_fidelity=None,
+):
     require_config(config)
     if not image_paths:
         raise ImageForgeError("missing_config", "Edit requires at least one --image path")
     for path in image_paths:
         if not os.path.exists(path):
             raise ImageForgeError("missing_config", "Image file not found: " + path)
+    if mask is not None and not os.path.exists(mask):
+        raise ImageForgeError("missing_config", "Mask file not found: " + mask)
+    output_format = normalize_output_format(output_format)
     boundary = "imageforge-{0}".format(timestamp_slug())
     fields = [
         ("model", config["model"]),
         ("prompt", prompt),
         ("size", size),
+        ("n", normalize_n(n)),
     ]
+    if quality:
+        fields.append(("quality", quality))
+    normalized_response_format = normalize_response_format(response_format)
+    if normalized_response_format:
+        fields.append(("response_format", normalized_response_format))
+    if output_format:
+        fields.append(("output_format", output_format))
+    compression = normalize_output_compression(output_compression, output_format)
+    if compression is not None:
+        fields.append(("output_compression", compression))
+    normalized_background = normalize_background(background)
+    if normalized_background:
+        fields.append(("background", normalized_background))
+    normalized_moderation = normalize_moderation(moderation)
+    if normalized_moderation:
+        fields.append(("moderation", normalized_moderation))
+    normalized_fidelity = normalize_input_fidelity(input_fidelity)
+    if normalized_fidelity:
+        fields.append(("input_fidelity", normalized_fidelity))
+    if user:
+        fields.append(("user", user))
     files = [("image", path) for path in image_paths]
+    if mask:
+        # A mask is a separate file part; it is only meaningful with the images
+        # it applies to, so it is appended after them.
+        files.append(("mask", mask))
     body = multipart_body(fields, files, boundary)
     headers = {
         "Authorization": "Bearer " + config["apiKey"],
@@ -366,6 +455,103 @@ def extract_brief_fields(brief, fields_spec):
     if current_field:
         fields[current_field] = "\n".join(current_lines).strip()
     return fields
+
+OUTPUT_FORMATS = ("png", "jpeg", "webp")
+BACKGROUNDS = ("auto", "transparent", "opaque")
+MODERATIONS = ("auto", "low")
+INPUT_FIDELITIES = ("low", "high")
+MAX_IMAGE_N = 10
+
+# Magic-byte signatures keyed by extension, ordered most-specific first so a
+# response can be typed even when the provider omits output_format.
+IMAGE_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"\xff\xd8\xff", "jpeg"),
+    (b"RIFF", "webp"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+)
+
+
+def normalize_enum(value, allowed, field_name, error_code):
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in allowed:
+        raise ImageForgeError(
+            error_code,
+            "{0} must be one of: {1}.".format(field_name, ", ".join(allowed)),
+        )
+    return normalized
+
+
+def normalize_output_format(value):
+    normalized = normalize_enum(value, OUTPUT_FORMATS, "output_format", "invalid_output_format")
+    if normalized == "jpg":
+        return "jpeg"
+    return normalized
+
+
+def normalize_background(value):
+    return normalize_enum(value, BACKGROUNDS, "background", "invalid_background")
+
+
+def normalize_moderation(value):
+    return normalize_enum(value, MODERATIONS, "moderation", "invalid_moderation")
+
+
+def normalize_input_fidelity(value):
+    return normalize_enum(value, INPUT_FIDELITIES, "input_fidelity", "invalid_input_fidelity")
+
+
+def strict_int(value, field_name, error_code, minimum, maximum):
+    # bool is an int subclass, and int(1.7) silently truncates; both would turn
+    # a user typo into a different request, so reject them explicitly.
+    if isinstance(value, bool):
+        raise ImageForgeError(
+            error_code,
+            "{0} must be an integer between {1} and {2}.".format(field_name, minimum, maximum),
+        )
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not re.match(r"^[+-]?\d+$", text):
+            raise ImageForgeError(
+                error_code,
+                "{0} must be an integer between {1} and {2}.".format(field_name, minimum, maximum),
+            )
+        parsed = int(text)
+    else:
+        raise ImageForgeError(
+            error_code,
+            "{0} must be an integer between {1} and {2}.".format(field_name, minimum, maximum),
+        )
+    if parsed < minimum or parsed > maximum:
+        raise ImageForgeError(
+            error_code,
+            "{0} must be an integer between {1} and {2}.".format(field_name, minimum, maximum),
+        )
+    return parsed
+
+
+def normalize_output_compression(value, output_format=None):
+    if value is None or value == "":
+        return None
+    compression = strict_int(value, "output_compression", "invalid_output_compression", 0, 100)
+    # png is lossless; sending a compression level alongside it is silently
+    # ignored upstream, so drop it instead of implying it did something.
+    if output_format == "png":
+        return None
+    return compression
+
+
+def normalize_n(value, limit=MAX_IMAGE_N):
+    if value is None or value == "":
+        return 1
+    return strict_int(value, "n", "invalid_n", 1, limit)
 
 
 def extract_approved_brief_fields(brief):
@@ -523,18 +709,36 @@ def extract_image_bytes(item, download_func=None):
     )
 
 
+def detect_image_extension(image_bytes, declared_format=None):
+    # Sniff the payload first: a provider may answer in a format other than the
+    # requested one, so the declared value is only a fallback.
+    for signature, extension in IMAGE_SIGNATURES:
+        if image_bytes.startswith(signature):
+            if extension == "webp" and not image_bytes[8:12] == b"WEBP":
+                continue
+            return extension
+    declared = (declared_format or "").strip().lower()
+    if declared in OUTPUT_FORMATS:
+        return declared
+    if declared == "jpg":
+        return "jpeg"
+    return "png"
+
+
 def write_image_outputs(response, output_dir, output_name, download_func=None):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     written = []
     items = response.get("data") or []
+    declared_format = response.get("output_format") if isinstance(response, dict) else None
     for index, item in enumerate(items, 1):
         name = "{0}-{1:02d}".format(output_name, index)
-        image_path = os.path.join(output_dir, name + ".png")
         image_bytes = extract_image_bytes(item, download_func=download_func)
+        extension = detect_image_extension(image_bytes, declared_format)
+        image_path = os.path.join(output_dir, name + "." + extension)
         with open(image_path, "wb") as handle:
             handle.write(image_bytes)
-        written.append({"imagePath": image_path})
+        written.append({"imagePath": image_path, "format": extension})
     if not written:
         raise ImageForgeError("protocol_error", "Image response did not include data")
     return written
@@ -559,9 +763,39 @@ def http_json(url, headers, body, timeout=120):
         raise ImageForgeError("protocol_error", "Provider returned invalid JSON")
 
 
-def generate_image(prompt, size=DEFAULT_SIZE, quality=None, n=1, output_dir=None, output_name=None, cwd=None, home=None, env=None, brief=None, direct=False, response_format=DEFAULT_RESPONSE_FORMAT):
+def generate_image(
+    prompt,
+    size=DEFAULT_SIZE,
+    quality=None,
+    n=1,
+    output_dir=None,
+    output_name=None,
+    cwd=None,
+    home=None,
+    env=None,
+    brief=None,
+    direct=False,
+    response_format=DEFAULT_RESPONSE_FORMAT,
+    output_format=None,
+    output_compression=None,
+    background=None,
+    moderation=None,
+    user=None,
+):
     config = load_effective_config(cwd=cwd, home=home, env=env)
-    url, headers, body = build_generation_request(config, prompt=prompt, size=size, quality=quality, n=n, response_format=response_format)
+    url, headers, body = build_generation_request(
+        config,
+        prompt=prompt,
+        size=size,
+        quality=quality,
+        n=n,
+        response_format=response_format,
+        output_format=output_format,
+        output_compression=output_compression,
+        background=background,
+        moderation=moderation,
+        user=user,
+    )
     require_image_brief(brief=brief, direct=direct)
     response = http_json(url, headers, body)
     final_output_dir = output_dir or resolve_default_output_dir(config, cwd=cwd)
@@ -569,10 +803,46 @@ def generate_image(prompt, size=DEFAULT_SIZE, quality=None, n=1, output_dir=None
     return write_image_outputs(response, final_output_dir, final_output_name)
 
 
-def edit_image(image_paths, prompt, size=DEFAULT_SIZE, output_dir=None, output_name=None, cwd=None, home=None, env=None, brief=None, direct=False):
+def edit_image(
+    image_paths,
+    prompt,
+    size=DEFAULT_SIZE,
+    output_dir=None,
+    output_name=None,
+    cwd=None,
+    home=None,
+    env=None,
+    brief=None,
+    direct=False,
+    quality=None,
+    n=1,
+    response_format=DEFAULT_RESPONSE_FORMAT,
+    output_format=None,
+    output_compression=None,
+    background=None,
+    moderation=None,
+    user=None,
+    mask=None,
+    input_fidelity=None,
+):
     image_paths = list(image_paths or [])
     config = load_effective_config(cwd=cwd, home=home, env=env)
-    url, headers, body = build_edit_request(config, image_paths=image_paths, prompt=prompt, size=size)
+    url, headers, body = build_edit_request(
+        config,
+        image_paths=image_paths,
+        prompt=prompt,
+        size=size,
+        quality=quality,
+        n=n,
+        response_format=response_format,
+        output_format=output_format,
+        output_compression=output_compression,
+        background=background,
+        moderation=moderation,
+        user=user,
+        mask=mask,
+        input_fidelity=input_fidelity,
+    )
     require_image_brief(brief=brief, direct=direct)
     try:
         response = http_json(url, headers, body)
@@ -1172,6 +1442,19 @@ def check_version(cwd=None, ttl_hours=24, run_git=None):
     return result
 
 
+def add_shared_image_arguments(parser):
+    parser.add_argument("--output-format", choices=list(OUTPUT_FORMATS),
+                        help="Output image format: png, jpeg, or webp.")
+    parser.add_argument("--output-compression", type=int,
+                        help="Compression level 0-100 for jpeg/webp output; ignored for png.")
+    parser.add_argument("--background", choices=list(BACKGROUNDS),
+                        help="Background handling: auto, transparent, or opaque.")
+    parser.add_argument("--moderation", choices=list(MODERATIONS),
+                        help="Content moderation level: auto or low.")
+    parser.add_argument("--user",
+                        help="Stable end-user identifier forwarded to the provider.")
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog="image_forge.py")
     subparsers = parser.add_subparsers(dest="command")
@@ -1200,22 +1483,38 @@ def parse_args(argv):
     generate_parser = subparsers.add_parser("generate")
     generate_parser.add_argument("--prompt", required=True)
     generate_parser.add_argument("--model")
-    generate_parser.add_argument("--size", default=DEFAULT_SIZE)
+    generate_parser.add_argument("--size", default=DEFAULT_SIZE,
+                                 help="Output size, e.g. 1024x1024, 1536x1024, 2048x2048, or a ratio like 16:9 (default: 1024x1024).")
     generate_parser.add_argument("--quality")
-    generate_parser.add_argument("--response-format", choices=list(RESPONSE_FORMATS),
+    generate_parser.add_argument("--response-format", choices=RESPONSE_FORMAT_CHOICES,
                                  default=DEFAULT_RESPONSE_FORMAT,
-                                 help="Provider response format: url or b64_json (default: b64_json).")
-    generate_parser.add_argument("--n", type=int, default=1)
+                                 help="Provider response format: url, b64_json (default), or auto to omit it.")
+    generate_parser.add_argument("--n", type=int, default=1,
+                                 help="Number of images, 1-{0} (default: 1).".format(MAX_IMAGE_N))
+    add_shared_image_arguments(generate_parser)
     generate_parser.add_argument("--output-dir")
     generate_parser.add_argument("--output-name")
     generate_parser.add_argument("--brief")
     generate_parser.add_argument("--direct", action="store_true")
 
     edit_parser = subparsers.add_parser("edit")
-    edit_parser.add_argument("--image", action="append", required=True)
+    edit_parser.add_argument("--image", action="append", required=True,
+                             help="Source image path; repeat for multi-image reference editing.")
     edit_parser.add_argument("--prompt", required=True)
     edit_parser.add_argument("--model")
-    edit_parser.add_argument("--size", default=DEFAULT_SIZE)
+    edit_parser.add_argument("--size", default=DEFAULT_SIZE,
+                             help="Output size, e.g. 1024x1024, 1536x1024, 2048x2048 (default: 1024x1024).")
+    edit_parser.add_argument("--quality")
+    edit_parser.add_argument("--response-format", choices=RESPONSE_FORMAT_CHOICES,
+                             default=DEFAULT_RESPONSE_FORMAT,
+                             help="Provider response format: url, b64_json (default), or auto to omit it.")
+    edit_parser.add_argument("--n", type=int, default=1,
+                             help="Number of images, 1-{0} (default: 1).".format(MAX_IMAGE_N))
+    edit_parser.add_argument("--mask",
+                             help="PNG mask for inpainting: white pixels are repainted, black pixels are kept.")
+    edit_parser.add_argument("--input-fidelity", choices=list(INPUT_FIDELITIES),
+                             help="How closely the edit must preserve the source image: low or high.")
+    add_shared_image_arguments(edit_parser)
     edit_parser.add_argument("--output-dir")
     edit_parser.add_argument("--output-name")
     edit_parser.add_argument("--brief")
@@ -1289,6 +1588,11 @@ def main(argv=None):
                 quality=args.quality,
                 response_format=args.response_format,
                 n=args.n,
+                output_format=args.output_format,
+                output_compression=args.output_compression,
+                background=args.background,
+                moderation=args.moderation,
+                user=args.user,
                 output_dir=args.output_dir,
                 output_name=args.output_name,
                 env=env,
@@ -1305,6 +1609,16 @@ def main(argv=None):
                 image_paths=args.image,
                 prompt=args.prompt,
                 size=args.size,
+                quality=args.quality,
+                response_format=args.response_format,
+                n=args.n,
+                output_format=args.output_format,
+                output_compression=args.output_compression,
+                background=args.background,
+                moderation=args.moderation,
+                user=args.user,
+                mask=args.mask,
+                input_fidelity=args.input_fidelity,
                 output_dir=args.output_dir,
                 output_name=args.output_name,
                 env=env,

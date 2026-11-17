@@ -12,7 +12,7 @@ Fix first-use configuration by having the agent run the readiness gate:
 python3 "$IMAGE_FORGE_SCRIPT" ensure-ready
 ```
 
-If configuration is missing, `ensure-ready` opens the setup page. The user registers/logs in at `https://www.nextai-code.com`, gets an API Key, then fills API key and default model in the browser page. The API URL is shown as locked. The setup server listens only on `127.0.0.1`, uses a one-time token URL, and shuts down after saving. Do not ask normal users to configure `PATH` or run setup manually.
+If configuration is missing, `ensure-ready` opens the setup page. The user registers/logs in at `https://www.nextairouter.com`, gets an API Key, then fills API key and default model in the browser page. The API URL is shown as locked. The setup server listens only on `127.0.0.1`, uses a one-time token URL, and shuts down after saving. Do not ask normal users to configure `PATH` or run setup manually.
 
 Do not continue the current ImageForge flow until preflight passes.
 
@@ -36,7 +36,7 @@ Cause: the provider returned `401` or `403`.
 
 Fix:
 
-- Confirm the API key was created at `https://www.nextai-code.com`.
+- Confirm the API key was created at `https://www.nextairouter.com`.
 - Confirm the key is valid for image generation and editing.
 - Prefer updating the key through the secure prompt or `IMAGE_FORGE_API_KEY`.
 - Do not paste the key into logs, Git, or replies.
@@ -49,8 +49,8 @@ Fix:
 
 - Confirm NextAI Code is reachable and implements OpenAI-compatible `/v1/images/generations` and `/v1/images/edits`.
 - Confirm the configured model is accepted by NextAI Code.
-- Confirm the requested `--size`, `--quality`, and `--n` values are supported by that provider.
-- Image responses may return either `data[].b64_json` (decoded and written directly) or `data[].url` (downloaded then written). Both produce the same on-disk `.png` output. If both fields are present, `b64_json` wins.
+- Confirm the requested `--size`, `--quality`, `--n`, `--output-format`, `--output-compression`, `--background`, and `--moderation` values are supported by that provider.
+- Image responses may return either `data[].b64_json` (decoded and written directly) or `data[].url` (downloaded then written). Both are written using the extension detected from the payload bytes. If both fields are present, `b64_json` wins.
 
 ## `download_failed`
 
@@ -73,6 +73,30 @@ python3 "$IMAGE_FORGE_SCRIPT" edit --brief '<approved brief>' --image '<path>' -
 ```
 
 Use one image path unless the target provider has been validated for multi-image edits.
+
+## `invalid_output_format`, `invalid_background`, `invalid_moderation`, `invalid_input_fidelity`
+
+Cause: an enum-valued option received a value outside its allowed set. Validation happens locally before any provider call, so no quota is consumed.
+
+Allowed values: `--output-format png|jpeg|webp`, `--background auto|transparent|opaque`, `--moderation auto|low`, `--input-fidelity low|high`.
+
+## `invalid_output_compression`
+
+Cause: `--output-compression` was outside `0`-`100` or was not an integer.
+
+Fix: use an integer in range. It only applies to `jpeg` and `webp`; ImageForge drops it for `png` because png is lossless and the provider ignores it.
+
+## `invalid_n`
+
+Cause: `--n` was outside `1`-`10`. The provider gateway allows a larger range, but this local cap prevents an accidental large spend in one call.
+
+Fix: request up to 10 images per call, or run the command again for more.
+
+## Transparency requested but PNG is opaque
+
+Cause: this NextAI deployment accepts `--background transparent` and still returns an opaque image, echoing `background: auto`.
+
+Fix: no client-side workaround exists. Report the outcome honestly rather than claiming transparency was applied, and treat a real alpha channel as unavailable until the upstream supports it.
 
 ## `network_error`
 

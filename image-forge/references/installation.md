@@ -56,14 +56,14 @@ if [ -z "$IMAGE_FORGE_SCRIPT" ]; then echo "ImageForge helper not found"; exit 2
 python3 "$IMAGE_FORGE_SCRIPT" ensure-ready
 ```
 
-If configuration is missing, `ensure-ready` stops the current flow and starts the local setup page. The setup server listens only on `127.0.0.1`, prints a one-time local URL, and tries to open the browser. The user registers/logs in at `https://www.nextai-code.com`, gets an API Key, then fills API key and default model in that page. The default model is `gpt-image-2`; keep it unless NextAI Code requires another model. The API URL is fixed to `https://www.nextai-code.com/v1` and cannot be changed. The service must implement:
+If configuration is missing, `ensure-ready` stops the current flow and starts the local setup page. The setup server listens only on `127.0.0.1`, prints a one-time local URL, and tries to open the browser. The user registers/logs in at `https://www.nextairouter.com`, gets an API Key, then fills API key and default model in that page. The default model is `gpt-image-2`; keep it unless NextAI Code requires another model. The API URL is fixed to `https://www.nextairouter.com/v1` and cannot be changed. The service must implement:
 
 - `/v1/images/generations`
 - `/v1/images/edits`
 
 After saving, the setup server persists configuration and shuts down automatically. Configuration is stored at the user level (`~/.config/image-forge/`), so it works from any working directory; switching directories does not require re-configuration. An optional project-level `.image-forge/config.json` can override `defaultModel` and `outputDir` for one project only. On first run after upgrading, existing project-level `defaultModel`/`outputDir` values are migrated to the user-level config automatically. Secrets are written to the user secret file, never to the skill folder, Git, logs, or agent replies.
 
-Generated and edited images are saved by default directly in the project root. ImageForge writes `.png` image files only; it does not create `ImageForge/outputs/YYYY-MM-DD/` or output sidecar `.json` files.
+Generated and edited images are saved by default directly in the project root. The extension follows the actual payload (`.png`, `.jpeg`, or `.webp`) rather than a fixed `.png`; ImageForge does not create `ImageForge/outputs/YYYY-MM-DD/` or output sidecar `.json` files.
 
 Before any ImageForge task, run:
 

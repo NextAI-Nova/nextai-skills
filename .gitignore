@@ -1,1 +1,3 @@
 image-forge/nextai-image-forge-*.tgz
+__pycache__/
+*.py[cod]

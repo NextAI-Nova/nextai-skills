@@ -76,7 +76,7 @@ class ConfigTests(unittest.TestCase):
         result = self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-test-secret",
             default_model="gpt-image-2",
         )
@@ -85,7 +85,7 @@ class ConfigTests(unittest.TestCase):
         user_config_path = os.path.join(self.home, ".config", "image-forge", "config.json")
         with open(user_config_path) as handle:
             user_config = json.load(handle)
-        self.assertEqual(user_config["apiUrl"], "https://www.nextai-code.com/v1")
+        self.assertEqual(user_config["apiUrl"], "https://www.nextairouter.com/v1")
         self.assertEqual(user_config["defaultModel"], "gpt-image-2")
         self.assertNotIn("apiKey", user_config)
         # Project-level config is also written when a model is set explicitly,
@@ -139,7 +139,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_ensure_ready_migrates_legacy_project_model_to_user_level(self):
         legacy_config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "defaultModel": "legacy-model",
         }
         legacy_path = os.path.join(self.cwd, ".image-forge", "config.json")
@@ -177,7 +177,7 @@ class ConfigTests(unittest.TestCase):
         os.makedirs(os.path.dirname(legacy_path))
         with open(legacy_path, "w") as handle:
             json.dump({
-                "apiUrl": "https://www.nextai-code.com/v1",
+                "apiUrl": "https://www.nextairouter.com/v1",
                 "defaultModel": "legacy-model",
                 "outputDir": "images",
             }, handle)
@@ -274,7 +274,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(os.path.exists(paths[0]["imagePath"]))
 
     def test_write_image_outputs_downloads_url_response_to_png(self):
-        response = {"data": [{"url": "https://www.nextai-code.com/files/img-abc.png"}]}
+        response = {"data": [{"url": "https://www.nextairouter.com/files/img-abc.png"}]}
         paths = self.mod.write_image_outputs(
             response=response,
             output_dir=self.cwd,
@@ -293,7 +293,7 @@ class ConfigTests(unittest.TestCase):
             "data": [
                 {
                     "b64_json": base64.b64encode(payload).decode("ascii"),
-                    "url": "https://www.nextai-code.com/files/should-not-download.png",
+                    "url": "https://www.nextairouter.com/files/should-not-download.png",
                 }
             ]
         }
@@ -313,7 +313,7 @@ class ConfigTests(unittest.TestCase):
         def failing_download(url):
             raise self.mod.ImageForgeError("download_failed", "boom " + url)
 
-        response = {"data": [{"url": "https://www.nextai-code.com/files/expired.png"}]}
+        response = {"data": [{"url": "https://www.nextairouter.com/files/expired.png"}]}
         with self.assertRaises(self.mod.ImageForgeError) as ctx:
             self.mod.write_image_outputs(
                 response=response,
@@ -323,7 +323,7 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.code, "download_failed")
-        self.assertIn("https://www.nextai-code.com/files/expired.png", str(ctx.exception))
+        self.assertIn("https://www.nextairouter.com/files/expired.png", str(ctx.exception))
 
     def test_download_image_bytes_http_error_includes_url(self):
         class FailingOpener:
@@ -343,12 +343,12 @@ class ConfigTests(unittest.TestCase):
         self.mod.request.urlopen = fake_urlopen
         try:
             with self.assertRaises(self.mod.ImageForgeError) as ctx:
-                self.mod.download_image_bytes("https://www.nextai-code.com/files/missing.png")
+                self.mod.download_image_bytes("https://www.nextairouter.com/files/missing.png")
         finally:
             self.mod.request.urlopen = original_urlopen
 
         self.assertEqual(ctx.exception.code, "download_failed")
-        self.assertIn("https://www.nextai-code.com/files/missing.png", str(ctx.exception))
+        self.assertIn("https://www.nextairouter.com/files/missing.png", str(ctx.exception))
         self.assertIn("404", str(ctx.exception))
 
     def test_write_image_outputs_rejects_item_without_b64_or_url(self):
@@ -367,7 +367,7 @@ class ConfigTests(unittest.TestCase):
         result = self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-test-secret",
             default_model="gpt-image-2",
         )
@@ -411,7 +411,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com",
+            api_url="https://www.nextairouter.com",
             api_key="sk-file-secret",
             default_model="file-model",
         )
@@ -419,12 +419,12 @@ class ConfigTests(unittest.TestCase):
             cwd=self.cwd,
             home=self.home,
             env={
-                "IMAGE_FORGE_API_URL": "https://www.nextai-code.com/v1",
+                "IMAGE_FORGE_API_URL": "https://www.nextairouter.com/v1",
                 "IMAGE_FORGE_API_KEY": "sk-env-secret",
                 "IMAGE_FORGE_MODEL": "env-model",
             },
         )
-        self.assertEqual(config["apiUrl"], "https://www.nextai-code.com/v1")
+        self.assertEqual(config["apiUrl"], "https://www.nextairouter.com/v1")
         self.assertEqual(config["apiKey"], "sk-env-secret")
         self.assertEqual(config["model"], "env-model")
 
@@ -439,7 +439,7 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.code, "invalid_api_url")
-        self.assertIn("https://www.nextai-code.com/v1", str(ctx.exception))
+        self.assertIn("https://www.nextairouter.com/v1", str(ctx.exception))
 
     def test_rejects_non_nextai_api_url_from_environment(self):
         with self.assertRaises(self.mod.ImageForgeError) as ctx:
@@ -462,7 +462,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-file-secret",
         )
 
@@ -478,7 +478,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-doctor-secret",
             default_model="gpt-image-2",
         )
@@ -486,7 +486,7 @@ class ConfigTests(unittest.TestCase):
         configured = self.mod.doctor(cwd=self.cwd, home=self.home, env={})
 
         self.assertEqual(configured["configured"], True)
-        self.assertEqual(configured["apiHost"], "www.nextai-code.com")
+        self.assertEqual(configured["apiHost"], "www.nextairouter.com")
         self.assertEqual(configured["model"], "gpt-image-2")
         self.assertEqual(configured["apiKey"], "configured")
         self.assertNotIn("sk-doctor-secret", json.dumps(configured))
@@ -498,7 +498,7 @@ class ConfigTests(unittest.TestCase):
         missing = self.mod.doctor(cwd=missing_cwd, home=missing_home, env={})
 
         self.assertEqual(missing["configured"], False)
-        self.assertEqual(missing["apiHost"], "www.nextai-code.com")
+        self.assertEqual(missing["apiHost"], "www.nextairouter.com")
         self.assertEqual(missing["model"], "")
         self.assertEqual(missing["apiKey"], "missing")
 
@@ -516,7 +516,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-preflight-secret",
             default_model="custom-image-model",
         )
@@ -524,7 +524,7 @@ class ConfigTests(unittest.TestCase):
         result = self.mod.preflight(cwd=self.cwd, home=self.home, env={})
 
         self.assertEqual(result["ready"], True)
-        self.assertEqual(result["apiHost"], "www.nextai-code.com")
+        self.assertEqual(result["apiHost"], "www.nextairouter.com")
         self.assertEqual(result["model"], "custom-image-model")
         self.assertEqual(result["apiKey"], "configured")
         self.assertNotIn("sk-preflight-secret", json.dumps(result))
@@ -542,14 +542,14 @@ class ConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(result["ready"], True)
-        self.assertEqual(result["apiHost"], "www.nextai-code.com")
+        self.assertEqual(result["apiHost"], "www.nextairouter.com")
         self.assertEqual(result["model"], "gpt-image-2")
         self.assertEqual(result["apiKey"], "configured")
         self.assertNotIn("sk-setup-secret", json.dumps(result))
 
         with open(os.path.join(self.cwd, ".image-forge", "config.json")) as handle:
             project_config = json.load(handle)
-        self.assertEqual(project_config["apiUrl"], "https://www.nextai-code.com/v1")
+        self.assertEqual(project_config["apiUrl"], "https://www.nextairouter.com/v1")
         self.assertEqual(project_config["defaultModel"], "gpt-image-2")
         self.assertNotIn("apiKey", project_config)
 
@@ -577,7 +577,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-existing-secret",
             default_model="gpt-image-2",
         )
@@ -585,12 +585,12 @@ class ConfigTests(unittest.TestCase):
 
         html = self.mod.setup_form_html(config=config, token="fixed-token")
 
-        self.assertIn("https://www.nextai-code.com/v1", html)
+        self.assertIn("https://www.nextairouter.com/v1", html)
         self.assertIn("gpt-image-2", html)
         self.assertIn("配置 ImageForge", html)
         self.assertIn("已配置，留空则不修改", html)
         self.assertIn("保存配置", html)
-        self.assertIn("https://www.nextai-code.com/v1", html)
+        self.assertIn("https://www.nextairouter.com/v1", html)
         self.assertIn("获取 API Key", html)
         self.assertIn('<label for="api_key">API Key</label>', html)
         self.assertIn('<label for="default_model">默认模型</label>', html)
@@ -640,7 +640,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-ready-secret",
             default_model="gpt-image-2",
         )
@@ -665,7 +665,7 @@ class ConfigTests(unittest.TestCase):
             self.mod.configure_values(
                 cwd=self.cwd,
                 home=self.home,
-                api_url="https://www.nextai-code.com/v1",
+                api_url="https://www.nextairouter.com/v1",
                 api_key="sk-setup-secret",
                 default_model="gpt-image-2",
             )
@@ -773,7 +773,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_build_generation_request_defaults_response_format_to_b64_json(self):
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -796,7 +796,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_build_generation_request_passes_response_format_through(self):
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -812,7 +812,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_build_generation_request_rejects_invalid_response_format(self):
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -834,6 +834,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(args.response_format, "url")
         args_default = self.mod.parse_args(["generate", "--prompt", "robot"])
         self.assertEqual(args_default.response_format, "b64_json")
+        args_auto = self.mod.parse_args(["generate", "--prompt", "robot", "--response-format", "auto"])
+        self.assertEqual(args_auto.response_format, "auto")
 
     def test_parse_generate_rejects_unknown_response_format(self):
         with self.assertRaises(SystemExit):
@@ -845,7 +847,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_build_generation_request_uses_openai_endpoint(self):
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -859,7 +861,7 @@ class ConfigTests(unittest.TestCase):
         )
         payload = json.loads(body.decode("utf-8"))
 
-        self.assertEqual(url, "https://www.nextai-code.com/v1/images/generations")
+        self.assertEqual(url, "https://www.nextairouter.com/v1/images/generations")
         self.assertEqual(headers["Authorization"], "Bearer sk-secret")
         self.assertEqual(payload["model"], "gpt-image-2")
         self.assertEqual(payload["prompt"], "a brass robot watering a bonsai")
@@ -872,7 +874,7 @@ class ConfigTests(unittest.TestCase):
         with open(image_path, "wb") as handle:
             handle.write(b"fake-png")
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -886,7 +888,7 @@ class ConfigTests(unittest.TestCase):
         )
         body_text = body.decode("latin-1")
 
-        self.assertEqual(url, "https://www.nextai-code.com/v1/images/edits")
+        self.assertEqual(url, "https://www.nextairouter.com/v1/images/edits")
         self.assertEqual(headers["Authorization"], "Bearer sk-secret")
         self.assertTrue(headers["Content-Type"].startswith("multipart/form-data; boundary="))
         boundary = headers["Content-Type"].split("boundary=", 1)[1]
@@ -901,7 +903,7 @@ class ConfigTests(unittest.TestCase):
         with open(image_path, "wb") as handle:
             handle.write(b"fake-png")
         config = {
-            "apiUrl": "https://www.nextai-code.com/v1",
+            "apiUrl": "https://www.nextairouter.com/v1",
             "apiKey": "sk-secret",
             "model": "gpt-image-2",
             "outputDir": ".",
@@ -916,6 +918,220 @@ class ConfigTests(unittest.TestCase):
         body_text = body.decode("latin-1")
 
         self.assertEqual(body_text.count('name="image"'), 2)
+
+    def _image_config(self):
+        return {
+            "apiUrl": "https://www.nextairouter.com/v1",
+            "apiKey": "sk-secret",
+            "model": "gpt-image-2",
+            "outputDir": ".",
+        }
+
+    def test_build_generation_request_forwards_new_optional_params(self):
+        _url, _headers, body = self.mod.build_generation_request(
+            config=self._image_config(),
+            prompt="robot",
+            output_format="webp",
+            output_compression=80,
+            background="transparent",
+            moderation="low",
+            user="user-42",
+        )
+        payload = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(payload["output_format"], "webp")
+        self.assertEqual(payload["output_compression"], 80)
+        self.assertEqual(payload["background"], "transparent")
+        self.assertEqual(payload["moderation"], "low")
+        self.assertEqual(payload["user"], "user-42")
+
+    def test_build_generation_request_omits_unspecified_optional_params(self):
+        _url, _headers, body = self.mod.build_generation_request(
+            config=self._image_config(),
+            prompt="robot",
+        )
+        payload = json.loads(body.decode("utf-8"))
+
+        for field in ("output_format", "output_compression", "background", "moderation", "user"):
+            self.assertNotIn(field, payload)
+
+    def test_build_generation_request_supports_omitting_response_format(self):
+        _url, _headers, body = self.mod.build_generation_request(
+            config=self._image_config(),
+            prompt="robot",
+            response_format="auto",
+        )
+        payload = json.loads(body.decode("utf-8"))
+
+        self.assertNotIn("response_format", payload)
+
+    def test_output_compression_is_dropped_for_png(self):
+        _url, _headers, body = self.mod.build_generation_request(
+            config=self._image_config(),
+            prompt="robot",
+            output_format="png",
+            output_compression=50,
+        )
+        payload = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(payload["output_format"], "png")
+        self.assertNotIn("output_compression", payload)
+
+    def test_normalizers_reject_invalid_enum_values(self):
+        cases = (
+            ("normalize_output_format", "gif", "invalid_output_format"),
+            ("normalize_background", "blue", "invalid_background"),
+            ("normalize_moderation", "high", "invalid_moderation"),
+            ("normalize_input_fidelity", "medium", "invalid_input_fidelity"),
+        )
+        for function_name, value, expected_code in cases:
+            with self.subTest(function=function_name):
+                with self.assertRaises(self.mod.ImageForgeError) as ctx:
+                    getattr(self.mod, function_name)(value)
+                self.assertEqual(ctx.exception.code, expected_code)
+
+    def test_output_compression_out_of_range_is_rejected(self):
+        for value in (-1, 101, "abc", 1.5, True):
+            with self.subTest(value=value):
+                with self.assertRaises(self.mod.ImageForgeError) as ctx:
+                    self.mod.normalize_output_compression(value, "webp")
+                self.assertEqual(ctx.exception.code, "invalid_output_compression")
+
+    def test_numeric_options_reject_non_integers_instead_of_truncating(self):
+        for value in (1.7, True, "2.5", [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(self.mod.ImageForgeError) as ctx:
+                    self.mod.normalize_n(value)
+                self.assertEqual(ctx.exception.code, "invalid_n")
+
+    def test_numeric_options_accept_integer_strings(self):
+        self.assertEqual(self.mod.normalize_n(" 3 "), 3)
+        self.assertEqual(self.mod.normalize_output_compression("80", "webp"), 80)
+
+    def test_n_is_validated_against_the_local_cap(self):
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.build_generation_request(config=self._image_config(), prompt="robot", n=0)
+        self.assertEqual(ctx.exception.code, "invalid_n")
+
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.build_generation_request(
+                config=self._image_config(), prompt="robot", n=self.mod.MAX_IMAGE_N + 1
+            )
+        self.assertEqual(ctx.exception.code, "invalid_n")
+
+        _url, _headers, body = self.mod.build_generation_request(
+            config=self._image_config(), prompt="robot", n=self.mod.MAX_IMAGE_N
+        )
+        self.assertEqual(json.loads(body.decode("utf-8"))["n"], self.mod.MAX_IMAGE_N)
+
+    def test_build_edit_request_forwards_mask_and_edit_only_params(self):
+        image_path = os.path.join(self.cwd, "source.png")
+        mask_path = os.path.join(self.cwd, "mask.png")
+        for path in (image_path, mask_path):
+            with open(path, "wb") as handle:
+                handle.write(b"fake-png")
+
+        _url, _headers, body = self.mod.build_edit_request(
+            config=self._image_config(),
+            image_paths=[image_path],
+            prompt="replace the right half with water",
+            mask=mask_path,
+            input_fidelity="high",
+            quality="high",
+            output_format="webp",
+            output_compression=70,
+            background="opaque",
+            moderation="low",
+            user="user-7",
+            n=2,
+        )
+        body_text = body.decode("latin-1")
+
+        self.assertIn('name="mask"; filename="mask.png"', body_text)
+        self.assertIn('name="input_fidelity"\r\n\r\nhigh', body_text)
+        self.assertIn('name="quality"\r\n\r\nhigh', body_text)
+        self.assertIn('name="output_format"\r\n\r\nwebp', body_text)
+        self.assertIn('name="output_compression"\r\n\r\n70', body_text)
+        self.assertIn('name="background"\r\n\r\nopaque', body_text)
+        self.assertIn('name="moderation"\r\n\r\nlow', body_text)
+        self.assertIn('name="user"\r\n\r\nuser-7', body_text)
+        self.assertIn('name="n"\r\n\r\n2', body_text)
+
+    def test_build_edit_request_rejects_missing_mask_file(self):
+        image_path = os.path.join(self.cwd, "source.png")
+        with open(image_path, "wb") as handle:
+            handle.write(b"fake-png")
+
+        with self.assertRaises(self.mod.ImageForgeError) as ctx:
+            self.mod.build_edit_request(
+                config=self._image_config(),
+                image_paths=[image_path],
+                prompt="edit",
+                mask=os.path.join(self.cwd, "missing-mask.png"),
+            )
+        self.assertEqual(ctx.exception.code, "missing_config")
+        self.assertIn("Mask file not found", str(ctx.exception))
+
+    def test_detect_image_extension_sniffs_bytes_over_declared_format(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"rest"
+        jpeg = b"\xff\xd8\xff" + b"rest"
+        webp = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"rest"
+
+        self.assertEqual(self.mod.detect_image_extension(png, "webp"), "png")
+        self.assertEqual(self.mod.detect_image_extension(jpeg), "jpeg")
+        self.assertEqual(self.mod.detect_image_extension(webp), "webp")
+        # Unknown payload falls back to the declared format, then to png.
+        self.assertEqual(self.mod.detect_image_extension(b"unknown", "webp"), "webp")
+        self.assertEqual(self.mod.detect_image_extension(b"unknown", "jpg"), "jpeg")
+        self.assertEqual(self.mod.detect_image_extension(b"unknown"), "png")
+
+    def test_write_image_outputs_uses_real_format_for_extension(self):
+        webp = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"image-data"
+        response = {
+            "output_format": "webp",
+            "data": [{"b64_json": base64.b64encode(webp).decode("ascii")}],
+        }
+        paths = self.mod.write_image_outputs(
+            response=response,
+            output_dir=self.cwd,
+            output_name="robot",
+        )
+
+        self.assertEqual(len(paths), 1)
+        self.assertTrue(paths[0]["imagePath"].endswith(".webp"))
+        self.assertEqual(paths[0]["format"], "webp")
+        self.assertTrue(os.path.exists(paths[0]["imagePath"]))
+
+    def test_parse_generate_accepts_new_flags(self):
+        args = self.mod.parse_args([
+            "generate",
+            "--prompt", "robot",
+            "--output-format", "webp",
+            "--output-compression", "60",
+            "--background", "transparent",
+            "--moderation", "low",
+            "--user", "user-1",
+            "--size", "2048x2048",
+        ])
+
+        self.assertEqual(args.output_format, "webp")
+        self.assertEqual(args.output_compression, 60)
+        self.assertEqual(args.background, "transparent")
+        self.assertEqual(args.moderation, "low")
+        self.assertEqual(args.user, "user-1")
+        self.assertEqual(args.size, "2048x2048")
+
+    def test_parse_edit_accepts_mask_and_input_fidelity(self):
+        args = self.mod.parse_args([
+            "edit",
+            "--image", "source.png",
+            "--prompt", "edit",
+            "--mask", "mask.png",
+            "--input-fidelity", "high",
+        ])
+
+        self.assertEqual(args.mask, "mask.png")
+        self.assertEqual(args.input_fidelity, "high")
 
     def test_write_image_outputs_writes_png_only(self):
         response = {
@@ -959,7 +1175,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -989,7 +1205,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1016,7 +1232,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1044,7 +1260,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1076,7 +1292,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1108,7 +1324,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1140,7 +1356,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1171,7 +1387,7 @@ class ConfigTests(unittest.TestCase):
         self.mod.configure_values(
             cwd=self.cwd,
             home=self.home,
-            api_url="https://www.nextai-code.com/v1",
+            api_url="https://www.nextairouter.com/v1",
             api_key="sk-secret",
             default_model="gpt-image-2",
         )
@@ -1335,7 +1551,9 @@ class SkillInstructionTests(unittest.TestCase):
         skill = self.read_skill()
 
         self.assertIn("Default output directory is the project root", skill)
-        self.assertIn("do not create output sidecar `.json` files", skill)
+        self.assertIn("the file extension follows the real payload", skill)
+        self.assertIn("no output sidecar `.json` files are created", skill)
+        self.assertNotIn("write only `.png` image files", skill)
         self.assertNotIn("ImageForge/outputs/YYYY-MM-DD", skill)
         self.assertNotIn("metadata path", skill)
 

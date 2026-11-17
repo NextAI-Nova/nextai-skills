@@ -18,12 +18,16 @@ Image Forge includes an Image Brief workflow. Before normal generation or editin
 
 Image Forge supports both text-to-image generation and image editing from an existing source image, so it can start from a new idea or continue iterating on an existing visual.
 
+### 3.1 Provider parameter coverage
+
+Generation and editing expose the full set of image controls the NextAI gateway accepts: `size`, `quality`, `n` (1-10), `response_format`, `output_format` (png/jpeg/webp), `output_compression`, `background`, `moderation`, and `user`. Editing additionally supports a `mask` for inpainting, `input_fidelity`, and repeated source images for multi-image reference editing. Output files are named from the real payload format, so a webp request produces a `.webp` file.
+
 ### 4. Fixed NextAI Code endpoint
 
 The skill uses the fixed NextAI Code API base:
 
 ```text
-https://www.nextai-code.com/v1
+https://www.nextairouter.com/v1
 ```
 
 The setup flow does not ask users to configure arbitrary API URLs, and runtime checks reject non-NextAI endpoints. This avoids provider mismatch and misconfiguration.
@@ -59,4 +63,4 @@ npx skills add NextAI-Nova/nextai-skills@image-forge
 
 - GitHub: https://github.com/NextAI-Nova/nextai-skills
 - ClawHub: https://clawhub.ai/nextai/skills/nextai-image-forge
-- NextAI Code: https://www.nextai-code.com
+- NextAI Code: https://www.nextairouter.com

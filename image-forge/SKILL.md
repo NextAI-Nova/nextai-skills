@@ -47,13 +47,13 @@ Direct mode: if the user explicitly says to generate/edit directly, not ask ques
 
 - Never store API keys in this skill folder, Git, logs, or replies.
 - Prefer `scripts/image_forge.py` over hand-written HTTP commands.
-- Use only the fixed NextAI Code API base: `https://www.nextai-code.com/v1`. Never use or suggest another API URL.
+- Use only the fixed NextAI Code API base: `https://www.nextairouter.com/v1`. Never use or suggest another API URL.
 - Default model is `gpt-image-2` unless the user configures another NextAI-supported model.
-- Default output directory is the project root; write only `.png` image files and do not create output sidecar `.json` files.
+- Default output directory is the project root; the file extension follows the real payload (`.png`, `.jpeg`, or `.webp`), and no output sidecar `.json` files are created.
 - If `preflight` reports missing API key or model, start the local `setup-server` yourself; do not ask the user to run setup commands.
 - Never continue with local layout, local drawing, screenshots, or any non-ImageForge fallback when ImageForge is unconfigured.
 - Never turn a vague request into an API call without the Image Brief Gate unless Direct mode applies; the command must include either `--brief '<approved brief>'` or `--direct`.
-- Editing must support one source image plus a text instruction; multi-image edit attempts must degrade clearly if the backend rejects them.
+- Editing supports one source image plus a text instruction, an optional `--mask` for inpainting, and repeated `--image` values for multi-image reference editing; multi-image attempts must degrade clearly if the backend rejects them.
 - Do not auto-upgrade the skill during image generation or editing.
 
 ## Command Resolution
@@ -66,7 +66,7 @@ Do not make normal users configure `PATH`. `image-forge` is only a convenience a
 
 Configuration priority:
 
-1. Fixed API URL: `https://www.nextai-code.com/v1`
+1. Fixed API URL: `https://www.nextairouter.com/v1`
 2. `IMAGE_FORGE_API_KEY`, `IMAGE_FORGE_MODEL` environment variables
 3. Project-level override at `.image-forge/config.json` (`defaultModel`, `outputDir`) — optional, overrides the user-level config for this directory only
 4. User-level global config at `~/.config/image-forge/config.json` (`defaultModel`, `outputDir`) — shared across all working directories
@@ -74,7 +74,7 @@ Configuration priority:
 
 Configuration is stored at the user level by default, so it works in any working directory. A project-level `.image-forge/config.json` is only needed to override the model or output directory for one project. On first run after upgrading, any existing project-level `defaultModel`/`outputDir` is migrated to the user-level config automatically.
 
-`IMAGE_FORGE_API_URL` and `.image-forge/config.json` `apiUrl` are accepted only when they equal `https://www.nextai-code.com` or `https://www.nextai-code.com/v1`; any other URL is rejected before provider calls.
+`IMAGE_FORGE_API_URL` and `.image-forge/config.json` `apiUrl` are accepted only when they equal `https://www.nextairouter.com` or `https://www.nextairouter.com/v1`; any other URL is rejected before provider calls.
 
 Configuration gate:
 
@@ -89,7 +89,7 @@ python3 "$IMAGE_FORGE_SCRIPT" ensure-ready
 4. Wait for the user to submit API key and default model in the local page.
 5. Continue only after `ensure-ready` returns ready.
 
-The setup page listens on `127.0.0.1`, uses a one-time token URL, never echoes the API key, shows the locked NextAI Code URL, links to `https://www.nextai-code.com` for registration/API key retrieval, persists configuration, and shuts down after saving.
+The setup page listens on `127.0.0.1`, uses a one-time token URL, never echoes the API key, shows the locked NextAI Code URL, links to `https://www.nextairouter.com` for registration/API key retrieval, persists configuration, and shuts down after saving.
 
 Required readiness check:
 
@@ -107,6 +107,8 @@ If this command fails, do not continue the user's image task until configuration
 - Preflight: run `python3 "$IMAGE_FORGE_SCRIPT" preflight`.
 - Generate: after the Image Brief Gate, run `python3 "$IMAGE_FORGE_SCRIPT" generate --brief '<approved brief>' --prompt '<approved prompt>'`.
 - Edit: after the Image Brief Gate, run `python3 "$IMAGE_FORGE_SCRIPT" edit --brief '<approved brief>' --image '<path>' --prompt '<approved instruction>'`.
+- Optional image controls (both commands): `--size`, `--quality`, `--n`, `--response-format`, `--output-format`, `--output-compression`, `--background`, `--moderation`, `--user`.
+- Edit-only controls: `--mask '<mask.png>'` for inpainting and `--input-fidelity low|high` to control how strictly the source is preserved. Repeat `--image` for multi-image reference editing.
 - Diagnose: run `python3 "$IMAGE_FORGE_SCRIPT" doctor`.
 - Version check: run `python3 "$IMAGE_FORGE_SCRIPT" check-version`.
 
@@ -119,4 +121,4 @@ If this command fails, do not continue the user's image task until configuration
 
 ## Completion Report
 
-Report the generated or edited image path, model, output size, and any degraded version-check or provider-compatibility status. Default outputs are written directly to the project root. Never report secrets.
+Report the generated or edited image path, model, output size, actual output format, and any degraded version-check or provider-compatibility status. When a parameter was requested but the provider ignored it (for example `--background transparent` returning an opaque PNG), say so instead of claiming it applied. Default outputs are written directly to the project root. Never report secrets.
