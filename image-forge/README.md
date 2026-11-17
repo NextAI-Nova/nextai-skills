@@ -38,16 +38,18 @@ On first use, the skill starts a local setup page for API key and model configur
 
 ## Install
 
-### OpenClaw
-
-```bash
-openclaw skills install @nextai/nextai-image-forge
-```
-
-### npx skills
+The skill is distributed from the GitHub repository; there is no npm or registry package.
 
 ```bash
 npx skills add NextAI-Nova/nextai-skills@image-forge
+```
+
+This shallow-clones the repository and installs the `image-forge/` folder into `.agents/skills/image-forge/`. Re-run the same command to update.
+
+For other agents, clone the repository and point at the folder:
+
+```bash
+git clone https://github.com/NextAI-Nova/nextai-skills.git
 ```
 
 ## Use cases
@@ -62,5 +64,4 @@ npx skills add NextAI-Nova/nextai-skills@image-forge
 ## Links
 
 - GitHub: https://github.com/NextAI-Nova/nextai-skills
-- ClawHub: https://clawhub.ai/nextai/skills/nextai-image-forge
 - NextAI Code: https://www.nextairouter.com

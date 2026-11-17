@@ -9,34 +9,24 @@ Official NextAI skills for AI agents.
 Generate and edit images through the fixed NextAI Code image API.
 
 - Skill folder: [`image-forge`](./image-forge)
-- API base: `https://www.nextai-code.com/v1`
-- Get API Key: https://www.nextai-code.com
+- API base: `https://www.nextairouter.com/v1`
+- Get API Key: https://www.nextairouter.com
 
 ## Install
 
-### npx skills
-
-Target user-facing install name:
-
-```bash
-npx skills add image-forge
-```
-
-Current `npx skills` releases do not resolve arbitrary skill names directly in `add`. To make the command above work, `image-forge` must be accepted by the skills.sh / `skills` CLI resolver. Until then, the GitHub-source command is:
+Skills are distributed from this GitHub repository; there is no npm or registry package.
 
 ```bash
 npx skills add NextAI-Nova/nextai-skills@image-forge
 ```
 
-### OpenClaw
+`npx skills` shallow-clones the repository and copies the `image-forge/` folder into `.agents/skills/image-forge/`, recording the source commit in `skills-lock.json`. Run the same command to update.
 
-Target user-facing install name:
+Other agents can clone the repository and point at the folder directly:
 
 ```bash
-openclaw skills install @nextai/nextai-image-forge
+git clone https://github.com/NextAI-Nova/nextai-skills.git
 ```
-
-This is the published ClawHub skill reference.
 
 ## Development
 

@@ -33,9 +33,15 @@ npx skills add . --skill image-forge --full-depth
 
 For private repositories, prefer cloning first and installing from the local directory. This avoids ambiguity around private remote access and multi-skill repo selection.
 
-## OpenClaw note
+## Distribution
 
-ImageForge is designed for OpenClaw as an Agent Skill. Use the OpenClaw skill installation path supported by the target OpenClaw version, or install from a local clone with `npx skills add` when that is the verified path for the machine.
+The skill is distributed from the GitHub repository. There is no npm package and no registry publication step.
+
+```bash
+npx skills add NextAI-Nova/nextai-skills@image-forge
+```
+
+This shallow-clones the repository and copies `image-forge/` into `.agents/skills/image-forge/`. Re-run the same command to update.
 
 If the target agent scans skills only at startup, restart or reload the agent after installing `image-forge`.
 

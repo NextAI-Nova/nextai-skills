@@ -1,112 +1,84 @@
 # Publishing NextAI Skills
 
-Goal: users install by skill/registry name, not by GitHub repository URL.
+Skills are distributed **only** from this GitHub repository. This project does
+not publish to npm and does not rely on a skills.sh index registration.
 
-## Desired install commands
-
-```bash
-npx skills add image-forge
-```
-
-```bash
-openclaw skills install @nextai-nova/nextai-image-forge
-```
-
-These are two different ecosystems and require two publication steps.
-
-## 1. npx skills / skills.sh
-
-`npx skills add <source>` supports GitHub sources such as:
+The user-facing install command is:
 
 ```bash
 npx skills add NextAI-Nova/nextai-skills@image-forge
 ```
 
-To support the name-only command:
+## How distribution actually works
 
-```bash
-npx skills add image-forge
-```
+`npx skills add` does not download an npm tarball. It shallow-clones the
+repository and copies the skill folder into the consumer's workspace:
 
-`image-forge` must be registered with the skills.sh / Vercel `skills` resolver so it maps to this GitHub source and skill:
+1. `git clone --depth 1` of `NextAI-Nova/nextai-skills` into a temp directory.
+2. `fetchRepoTree` + `discoverSkills` find every directory containing a valid
+   `SKILL.md` (name and description in frontmatter).
+3. The `@image-forge` selector picks the `image-forge/` folder, which is copied
+   to `.agents/skills/image-forge/`.
+4. `skills-lock.json` records `source`, `commit`, `skillPath`, and
+   `computedHash`.
 
-```text
-source: NextAI-Nova/nextai-skills
-skill: image-forge
-install name: image-forge
-```
+Two consequences follow from that, and both matter for releasing:
 
-Evidence from local CLI inspection:
+- **Everything committed is distributed**, not just the npm `files` allowlist.
+  `scripts/test_image_forge.py` and `scripts/install_command.sh` ship to users
+  because they live in the folder. Keep them clean.
+- **Updating users means pushing a commit.** `npx skills update` re-resolves the
+  locked commit; there is no registry version to bump.
 
-- `npx skills find` queries `https://skills.sh/api/search`.
-- Search results print install hints as `npx skills add <owner/repo@skill>`.
-- `npx skills add image-forge` currently treats `image-forge` as a Git source and fails unless the resolver/index supports that name.
-
-### npx publish checklist
-
-1. Make `https://github.com/NextAI-Nova/nextai-skills` public.
-2. Keep `image-forge/SKILL.md` frontmatter valid:
-   - `name: image-forge`
-   - non-empty `description`
-3. Submit/register the skill with skills.sh so the resolver can map `image-forge` to `NextAI-Nova/nextai-skills@image-forge`.
-4. Verify after indexing:
-
-```bash
-npx skills find image-forge
-npx skills add image-forge --skill image-forge -y
-```
-
-If skills.sh requires GitHub-source syntax even after indexing, use the canonical command:
-
-```bash
-npx skills add NextAI-Nova/nextai-skills@image-forge
-```
-
-## 2. OpenClaw / ClawHub
-
-OpenClaw installs name-only registry skills from ClawHub using owner-scoped refs:
-
-```bash
-openclaw skills install @nextai-nova/nextai-image-forge
-```
-
-Publish the skill folder to ClawHub:
-
-```bash
-npm i -g clawhub
-clawhub login
-cd ~/work/code/nextai-skills
-clawhub skill publish ./image-forge --owner nextai-nova --slug nextai-image-forge --version 1.0.0
-```
-
-ClawHub validates publisher ownership. The publishing account must have access to the `@nextai-nova` owner.
-
-### ClawHub verification checklist
-
-```bash
-openclaw skills search nextai-image-forge
-openclaw skills verify @nextai-nova/nextai-image-forge
-openclaw skills install @nextai-nova/nextai-image-forge --force
-openclaw skills info nextai-image-forge
-```
-
-## Pre-release local checks
+## Release checklist
 
 ```bash
 cd ~/work/code/nextai-skills/image-forge
+
+# 1. Tests and syntax
 python3 scripts/test_image_forge.py
 python3 -m py_compile scripts/image_forge.py scripts/test_image_forge.py
-```
 
-Check Git contents before publishing:
+# 2. Version must agree in both places (there is a test for this)
+grep -n '^SKILL_VERSION' scripts/image_forge.py
+grep -n '"version"' package.json
+```
 
 ```bash
 cd ~/work/code/nextai-skills
+
+# 3. Review what will ship
 git status --short
 git diff --check
 git ls-files
+
+# 4. Commit and push
+git add -A
+git commit -m "feat(image-forge): ..."
+git push origin main
 ```
+
+## Verify a release from the consumer side
+
+Install into a throwaway directory and confirm the shipped version:
+
+```bash
+cd "$(mktemp -d)"
+npx skills add NextAI-Nova/nextai-skills@image-forge -y
+grep -n '^SKILL_VERSION' .agents/skills/image-forge/scripts/image_forge.py
+cat skills-lock.json
+```
+
+The lockfile `commit` must match the pushed commit. If it does not, the clone
+picked up a stale cache or the push did not land.
+
+## Versioning
+
+`package.json` `version` and `SKILL_VERSION` in `scripts/image_forge.py` are
+kept identical by a unit test. Bump both together. `package.json` is metadata
+only; it exists so tools can read a version, not as an npm publish target.
 
 ## External-write boundary
 
-Do not push, publish to ClawHub, or submit to skills.sh without explicit confirmation from the repo owner.
+Do not push, and do not introduce a new distribution channel, without explicit
+confirmation from the repo owner.
